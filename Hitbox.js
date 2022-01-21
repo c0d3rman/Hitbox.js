@@ -26,8 +26,8 @@ class Hitbox {
   // =============================
 
   doesCollide(other) {
-    for (var i = 0; i < this.components.length; i++) {
-      for (var j = 0; j < other.components.length; j++) {
+    for (let i = 0; i < this.components.length; i++) {
+      for (let j = 0; j < other.components.length; j++) {
         let key = this.components[i].type + "," + other.components[j].type;
         let collisionFn = this.collisionFnMap[key];
         if (collisionFn(this.components[i], other.components[j])) {
@@ -55,6 +55,15 @@ class Hitbox {
     });
   }
 
+  line(x1, y1, x2, y2) {
+    if (this.draw) {
+      line(x1, y1, x2, y2);
+    }
+    [x1, y1] = Hitbox.transformPoint(x1, y1);
+    [x2, y2] = Hitbox.transformPoint(x2, y2);
+    this.components.push(Hitbox.makeLine(x1, y1, x2, y2));
+  }
+
   rect(x, y, width, height) {
     if (this.draw) {
       rect(x, y, width, height);
@@ -79,6 +88,10 @@ class Hitbox {
         y: [y1, y2, y3],
       })
     );
+  }
+
+  square(x, y, s) {
+    this.rect(x, y, s, s);
   }
 
   quad(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -116,13 +129,8 @@ class Hitbox {
     );
   }
 
-  line(x1, y1, x2, y2) {
-    if (this.draw) {
-      line(x1, y1, x2, y2);
-    }
-    [x1, y1] = Hitbox.transformPoint(x1, y1);
-    [x2, y2] = Hitbox.transformPoint(x2, y2);
-    this.components.push(Hitbox.makeLine(x1, y1, x2, y2));
+  circle(x, y, d) {
+    this.ellipse(x, y, d, d);
   }
 
   // Private helpers
@@ -531,7 +539,176 @@ class Hitbox {
     );
   }
 
+  // This code is adapted from https://www.khanacademy.org/computer-programming/c/5567955982876672
   static collideEllipseEllipse(ellipse1, ellipse2) {
+    /*
+     * Does the quartic function described by
+     * y = z4*x⁴ + z3*x³ + z2*x² + z1*x + z0 have *any*
+     * real solutions? See
+     * http://en.wikipedia.org/wiki/Quartic_function
+     * Thanks to Dr. David Goldberg for the conversion to
+     * a depressed quartic!
+     */
+    let realRoot = function (z4, z3, z2, z1, z0) {
+      /* First trivial checks for z0 or z4 being zero */
+      if (Math.abs(z0) < EPSILON) {
+        return true; /* zero is a root! */
+      }
+      if (Math.abs(z4) < EPSILON) {
+        if (Math.abs(z3) >= EPSILON) {
+          return true; /* cubics always have roots */
+        }
+        if (Math.abs(z2) >= EPSILON) {
+          return z1 ** 2 - 4 * z2 * z0 >= 0; /* quadratic, use determinant */
+        }
+        return Math.abs(z1) >= EPSILON; /* sloped lines have one root */
+      }
+      let a = z3 / z4,
+        b = z2 / z4,
+        c = z1 / z4,
+        d = z0 / z4;
+      let p = (8 * b - 3 * a ** 2) / 8;
+      let q = (a ** 3 - 4 * a * b + 8 * c) / 8;
+      let r = (-3 * a ** 4 + 256 * d - 64 * c * a + 16 * a ** 2 * b) / 256;
+      /*
+       *   x⁴ +        p*x² + q*x + r
+       * a*x⁴ + b*x³ + c*x² + d*x + e
+       * so a=1  b=0  c=p  d=q  e=r
+       * That is, we have a depessed quartic.
+       */
+      let discrim =
+        256 * r ** 3 -
+        128 * p ** 2 * r ** 2 +
+        144 * p * q ** 2 * r -
+        27 * q ** 4 +
+        16 * p ** 4 * r -
+        4 * p ** 3 * q ** 2;
+      let P = 8 * p;
+      let D = 64 * r - 16 * p ** 2;
+
+      return (
+        discrim < 0 ||
+        (discrim > 0 && P < 0 && D < 0) ||
+        (discrim === 0 && (D !== 0 || P <= 0))
+      );
+    };
+
+    /*
+     * Is the Y coordinate(s) of the intersection of two conic
+     * sections real? They are in their bivariate form,
+     * ax²  + bxy  + cx²  + dx  + ey  + f = 0
+     * For now, a and a1 cannot be zero.
+     * See https://docs.google.com/file/d/0B7wsEy6bpVePSEt2Ql9hY0hFdjA/
+     */
+    let yIntersect = function (a, b, c, d, e, f, a1, b1, c1, d1, e1, f1) {
+      /*
+       * Normalize the conics by their first coefficient, a.
+       * Then get the differnce of the two equations.
+       */
+      let deltaB = (b1 /= a1) - (b /= a),
+        deltaC = (c1 /= a1) - (c /= a),
+        deltaD = (d1 /= a1) - (d /= a),
+        deltaE = (e1 /= a1) - (e /= a),
+        deltaF = (f1 /= a1) - (f /= a);
+
+      /* Special case for b's and d's being equal */
+      if (deltaB === 0 && deltaD === 0) {
+        return realRoot(0, 0, deltaC, deltaE, deltaF);
+      }
+
+      let a3 = b * c1 - b1 * c;
+      let a2 = b * e1 + d * c1 - b1 * e - d1 * c;
+      a1 = b * f1 + d * e1 - b1 * f - d1 * e;
+      let a0 = d * f1 - d1 * f;
+
+      let A = deltaC * deltaC - a3 * deltaB;
+      let B = 2 * deltaC * deltaE - deltaB * a2 - deltaD * a3;
+      let C = deltaE * deltaE + 2 * deltaC * deltaF - deltaB * a1 - deltaD * a2;
+      let D = 2 * deltaE * deltaF - deltaD * a1 - deltaB * a0;
+      let E = deltaF * deltaF - deltaD * a0;
+      return realRoot(A, B, C, D, E);
+    };
+
+    /*
+     * Do two conics sections el and el1 intersect? Each are in
+     * bivariate form, ax²  + bxy  + cx²  + dx  + ey  + f = 0
+     * Solve by constructing a quartic that must have a real
+     * solution if they intersect.  This checks for real Y
+     * intersects, then flips the parameters around to check
+     * for real X intersects.
+     */
+    var conicsIntersect = function (el, el1) {
+      /* check for real y intersects, then real x intersects */
+      return (
+        yIntersect(
+          el.a,
+          el.b,
+          el.c,
+          el.d,
+          el.e,
+          el.f,
+          el1.a,
+          el1.b,
+          el1.c,
+          el1.d,
+          el1.e,
+          el1.f
+        ) &&
+        yIntersect(
+          el.c,
+          el.b,
+          el.a,
+          el.e,
+          el.d,
+          el.f,
+          el1.c,
+          el1.b,
+          el1.a,
+          el1.e,
+          el1.d,
+          el1.f
+        )
+      );
+    };
+
+    /*
+     * Express an ellipse in terms of a "bivariate"
+     * polynomial that sums to zero. See
+     * http://elliotnoma.wordpress.com/2013/04/10/a-closed-form-solution-for-the-intersections-of-two-ellipses
+     */
+    let bivariateForm = function (ellipse) {
+      let A = Math.cos(ellipse.angle);
+      let B = Math.sin(ellipse.angle);
+      /*
+       * Start by rotating the ellipse center by the OPPOSITE
+       * of the desired angle.  That way when the bivariate
+       * computation transforms it back, it WILL be at the
+       * correct (and original) coordinates.
+       */
+      let r = new DOMMatrix()
+        .rotate((180 / PI) * -ellipse.angle)
+        .transformPoint(new DOMPoint(ellipse.x, ellipse.y));
+      let a = r.x,
+        c = r.y;
+
+      /*
+       * Now let the bivariate computation rotate in the opposite direction.
+       * We only need to flip B to do this, because cos(-theta) = cos(theta)
+       */
+      B = -B;
+      let b = ellipse.a ** 2,
+        d = ellipse.b ** 2;
+      return {
+        a: (A * A) / b + (B * B) / d /* x² coefficient */,
+        b: (-2 * A * B) / b + (2 * A * B) / d /* xy coeff */,
+        c: (B * B) / b + (A * A) / d /* y² coeff */,
+        d: (-2 * a * A) / b - (2 * c * B) / d /* x coeff */,
+        e: (2 * a * B) / b - (2 * c * A) / d /* y coeff */,
+        f: (a * a) / b + (c * c) / d - 1 /* constant */,
+        /* So, ax² + bxy + cy² + dx + ey + f = 0 */
+      };
+    };
+
     // First check if one ellipse is within the other
     if (
       Hitbox.collideCoordEllipse({ x: ellipse1.x, y: ellipse1.y }, ellipse2) ||
@@ -540,75 +717,9 @@ class Hitbox {
       return true;
     }
 
-    /*
-    1. Move plane so ellipse1 is centered at the origin
-    2. Rotate plane so ellipse1 is flat (major axis parallel to x axis)
-    3. Transform plane so ellipse1 is a circle
-    (order of operations is reversed due to how matrix math works)
-    */
-    let mat1 = new DOMMatrix()
-      .scale(ellipse1.b / ellipse1.a, 1)
-      .rotate((180 / PI) * -ellipse1.angle)
-      .translate(-ellipse1.x, -ellipse1.y);
-    ellipse1 = Hitbox.transformEllipse(ellipse1, mat1);
-    ellipse2 = Hitbox.transformEllipse(ellipse2, mat1);
-
-    /*
-    4. Move plane so ellipse2 is centered at the origin
-    5. Rotate plane so ellipse2 is flat (major axis parallel to x axis)
-    */
-    let mat2 = new DOMMatrix()
-      .rotate((180 / PI) * -ellipse2.angle)
-      .translate(-ellipse2.x, -ellipse2.y);
-    ellipse1 = Hitbox.transformEllipse(ellipse1, mat2);
-    ellipse2 = Hitbox.transformEllipse(ellipse2, mat2);
-
-    // With the parametric form of ellipse2 as (a cos t, b sin t),
-    // and the center of circle ellipse1 as (x, y),
-    // Use Newton approximation to find the t that minimizes
-    // (a * cos(t) - x)^2 + (b * sin(t) - y)^2
-    // This is the closest point on ellipse2 to the center of the circle.
-    // I really wanted a closed form of this but turns out that even though it exists, it's a very big and complex equation.
-
-    let f = (t) =>
-      2 * (ellipse2.b * sin(t) - ellipse1.y) * ellipse2.b * cos(t) -
-      2 * (ellipse2.a * cos(t) - ellipse1.x) * ellipse2.a * sin(t);
-
-    let g = (t) =>
-      2 * ellipse2.b ** 2 * cos(t) ** 2 +
-      2 * ellipse2.a ** 2 * sin(t) ** 2 -
-      2 * (ellipse2.a * cos(t) - ellipse1.x) * ellipse2.a * cos(t) -
-      2 * (ellipse2.b * sin(t) - ellipse1.y) * ellipse2.b * sin(t);
-
-    let t0 = Math.atan2(ellipse1.y, ellipse1.x);
-    let min_error = 0.1;
-    let max_iter = 100;
-    let step = 0;
-
-    while (abs(f(t0)) > min_error) {
-      step++;
-
-      if (g(t0) == 0) {
-        console.log("Mathematical Error");
-        return false;
-      }
-
-      t0 = t0 - f(t0) / g(t0);
-
-      if (step > max_iter) {
-        console.log("Not Convergent");
-        return false;
-      }
-    }
-
-    // Now that we know the closest point on ellipse2 to the center of the circle ellipse1, it's just a question of distance
-    return (
-      Hitbox.distance(
-        ellipse2.a * cos(t0),
-        ellipse2.b * sin(t0),
-        ellipse1.x,
-        ellipse1.y
-      ) <= ellipse1.a
-    );
+    // Convert both ellipses to bivariate form, then check if they intersect
+    let elps1 = bivariateForm(ellipse1);
+    let elps2 = bivariateForm(ellipse2);
+    return conicsIntersect(elps1, elps2);
   }
 }
