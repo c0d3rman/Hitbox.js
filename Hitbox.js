@@ -585,17 +585,6 @@ class Hitbox {
     let max_iter = 100;
     let step = 0;
 
-    push();
-    resetMatrix();
-    stroke(0, 0, 255);
-    strokeWeight(5);
-    let pt1 = mat2
-      .multiply(mat1)
-      .inverse()
-      .transformPoint(new DOMPoint(ellipse2.a * cos(t0), ellipse2.b * sin(t0)));
-    point(pt1.x, pt1.y);
-    pop();
-
     while (abs(f(t0)) > min_error) {
       step++;
 
@@ -611,16 +600,6 @@ class Hitbox {
         return false;
       }
     }
-
-    push();
-    resetMatrix();
-    strokeWeight(5);
-    let pt2 = mat2
-      .multiply(mat1)
-      .inverse()
-      .transformPoint(new DOMPoint(ellipse2.a * cos(t0), ellipse2.b * sin(t0)));
-    point(pt2.x, pt2.y);
-    pop();
 
     // Now that we know the closest point on ellipse2 to the center of the circle ellipse1, it's just a question of distance
     return (
