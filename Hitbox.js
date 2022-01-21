@@ -39,7 +39,9 @@ class Hitbox {
   }
 
   doesCollidePoint(x, y) {
-    return this.doesCollide({ components: [{ type: "coord", x: x, y: y }] });
+    return this.doesCollide({
+      components: [{ type: "coord", p: createVector(x, y) }],
+    });
   }
 
   // Public functions - p5 shape duplications
@@ -47,11 +49,10 @@ class Hitbox {
 
   // Special - does not draw
   coord(x, y) {
-    [x, y] = Hitbox.transformPoint(x, y);
+    [x, y] = Hitbox.transformPoint(createVector(x, y));
     this.components.push({
       type: "coord",
-      x: x,
-      y: y,
+      p: createVector(x, y),
     });
   }
 
@@ -59,9 +60,12 @@ class Hitbox {
     if (this.draw) {
       line(x1, y1, x2, y2);
     }
-    [x1, y1] = Hitbox.transformPoint(x1, y1);
-    [x2, y2] = Hitbox.transformPoint(x2, y2);
-    this.components.push(Hitbox.makeLine(x1, y1, x2, y2));
+    this.components.push(
+      Hitbox.makeLine(
+        Hitbox.transformPoint(createVector(x1, y1)),
+        Hitbox.transformPoint(createVector(x2, y2))
+      )
+    );
   }
 
   rect(x, y, width, height) {
@@ -71,8 +75,12 @@ class Hitbox {
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
-        x: [x, x + width, x + width, x],
-        y: [y, y, y + height, y + height],
+        ps: [
+          createVector(x, y),
+          createVector(x + width, y),
+          createVector(x + width, y + height),
+          createVector(x, y + height),
+        ],
       })
     );
   }
@@ -84,8 +92,7 @@ class Hitbox {
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
-        x: [x1, x2, x3],
-        y: [y1, y2, y3],
+        ps: [createVector(x1, y1), createVector(x2, y2), createVector(x3, y3)],
       })
     );
   }
@@ -101,8 +108,12 @@ class Hitbox {
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
-        x: [x1, x2, x3, x4],
-        y: [y1, y2, y3, y4],
+        ps: [
+          createVector(x1, y1),
+          createVector(x2, y2),
+          createVector(x3, y3),
+          createVector(x4, y4),
+        ],
       })
     );
   }
@@ -113,18 +124,11 @@ class Hitbox {
     }
 
     // Get conjugate diameters by transforming the original vertices of the ellipse
-    let [vertex1x, vertex1y] = Hitbox.transformPoint(x + width / 2, y);
-    let [vertex2x, vertex2y] = Hitbox.transformPoint(x, y + height / 2);
-    let [centerX, centerY] = Hitbox.transformPoint(x, y);
-
     this.components.push(
       Hitbox.makeEllipse(
-        centerX,
-        centerY,
-        vertex1x,
-        vertex1y,
-        vertex2x,
-        vertex2y
+        Hitbox.transformPoint(createVector(x, y)),
+        Hitbox.transformPoint(createVector(x + width / 2, y)),
+        Hitbox.transformPoint(createVector(x, y + height / 2))
       )
     );
   }
@@ -145,158 +149,121 @@ class Hitbox {
     }
   }
 
-  static transformPoint(x, y, mat = null) {
+  static transformPoint(p, mat = null) {
     let scaleFactor = 1;
     if (mat == null) {
       mat = drawingContext.getTransform();
       scaleFactor = pixelDensity();
     }
 
-    let point = mat.transformPoint(new DOMPoint(x, y));
-    return [point.x / scaleFactor, point.y / scaleFactor];
+    let pt = mat.transformPoint(new DOMPoint(p.x, p.y));
+    return createVector(pt.x / scaleFactor, pt.y / scaleFactor);
   }
 
   static transformLine(line, mat = null) {
-    let [x1Rot, y1Rot] = Hitbox.transformPoint(line.x1, line.y1, mat);
-    let [x2Rot, y2Rot] = Hitbox.transformPoint(line.x2, line.y2, mat);
-    return Hitbox.makeLine(x1Rot, y1Rot, x2Rot, y2Rot);
+    return Hitbox.makeLine(
+      Hitbox.transformPoint(line.p1, mat),
+      Hitbox.transformPoint(line.p2, mat)
+    );
   }
 
   static transformPolygon(poly, mat = null) {
-    let tpoly = Object.assign({}, poly);
-    for (let i = 0; i < poly.x.length; i++) {
-      let [xRot, yRot] = Hitbox.transformPoint(poly.x[i], poly.y[i], mat);
-      tpoly.x[i] = xRot;
-      tpoly.y[i] = yRot;
-    }
-    return tpoly;
+    return {
+      type: "poly",
+      ps: poly.ps.map((p) => Hitbox.transformPoint(p, mat)),
+    };
   }
 
   static transformEllipse(ellipse, mat = null) {
-    let [xRot, yRot] = Hitbox.transformPoint(ellipse.x, ellipse.y, mat);
-    let [dia1xRot, dia1yRot] = Hitbox.transformPoint(
-      ellipse.dia1x,
-      ellipse.dia1y,
-      mat
-    );
-    let [dia2xRot, dia2yRot] = Hitbox.transformPoint(
-      ellipse.dia2x,
-      ellipse.dia2y,
-      mat
-    );
     return Hitbox.makeEllipse(
-      xRot,
-      yRot,
-      dia1xRot,
-      dia1yRot,
-      dia2xRot,
-      dia2yRot
+      Hitbox.transformPoint(ellipse.center, mat),
+      Hitbox.transformPoint(ellipse.dia1, mat),
+      Hitbox.transformPoint(ellipse.dia2, mat)
     );
   }
 
-  static distance(x1, y1, x2, y2) {
-    return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
-  }
-
-  static makeLine(x1, y1, x2, y2) {
-    let mag = Hitbox.distance(x1, y1, x2, y2);
-    let vx = x2 - x1;
-    let vy = y2 - y1;
-    if (mag != 0) {
-      vx /= mag;
-      vy /= mag;
-    }
-    let t;
-    if (vx != 0) {
-      t = (x2 - x1) / vx;
-    } else {
-      t = (y2 - y1) / vy;
-    }
+  static makeLine(p1, p2) {
     return {
       type: "line",
-      x1: x1,
-      y1: y1,
-      x2: x2,
-      y2: y2,
-      vx: vx,
-      vy: vy,
-      t: t,
+      p1: p1,
+      p2: p2,
+      v: p5.Vector.sub(p2, p1).normalize(),
+      t: p2.dist(p1),
     };
   }
 
   // Makes an ellipse from two conjugate diameters, defined by a center and two points on the ellipse
   // This math is from wikipedia: https://en.wikipedia.org/wiki/Ellipse#General_ellipse_2
-  static makeEllipse(centerX, centerY, dia1x, dia1y, dia2x, dia2y) {
-    let vf1x = dia1x - centerX;
-    let vf1y = dia1y - centerY;
-    let vf2x = dia2x - centerX;
-    let vf2y = dia2y - centerY;
+  static makeEllipse(center, dia1, dia2) {
+    let vf1 = p5.Vector.sub(dia1, center);
+    let vf2 = p5.Vector.sub(dia2, center);
 
-    // Get the t of the first vertex (second vertex is just this plus PI/2)
-    let denom = 2 * (vf1x * vf2x + vf1y * vf2y);
+    // Get the t of the first vertex
+    let denom = 2 * vf1.dot(vf2);
     let t0;
     if (denom != 0) {
-      t0 =
-        (Math.PI / 2 -
-          Math.atan(
-            (vf1x * vf1x + vf1y * vf1y - (vf2x * vf2x + vf2y * vf2y)) / denom
-          )) /
-        2;
+      t0 = (Math.PI / 2 - Math.atan((vf1.magSq() - vf2.magSq()) / denom)) / 2;
     } else {
       // If the diameters are perpendicular, then t0 = 0
       t0 = 0;
     }
+    let t1 = t0 + PI / 2; // second vertex is just this plus PI/2
 
-    let v1x = centerX + vf1x * Math.cos(t0) + vf2x * Math.sin(t0);
-    let v1y = centerY + vf1y * Math.cos(t0) + vf2y * Math.sin(t0);
-    let v2x =
-      centerX + vf1x * Math.cos(t0 + PI / 2) + vf2x * Math.sin(t0 + PI / 2);
-    let v2y =
-      centerY + vf1y * Math.cos(t0 + PI / 2) + vf2y * Math.sin(t0 + PI / 2);
+    // Get the vertices using t0
+    let v1 = p5.Vector.add(
+      center,
+      p5.Vector.add(
+        p5.Vector.mult(vf1, Math.cos(t0)),
+        p5.Vector.mult(vf2, Math.sin(t0))
+      )
+    );
+    let v2 = p5.Vector.add(
+      center,
+      p5.Vector.add(
+        p5.Vector.mult(vf1, Math.cos(t1)),
+        p5.Vector.mult(vf2, Math.sin(t1))
+      )
+    );
 
     // Calculate semiaxes using vertices
-    let a = Hitbox.distance(centerX, centerY, v1x, v1y);
-    let b = Hitbox.distance(centerX, centerY, v2x, v2y);
+    let a = center.dist(v1);
+    let b = center.dist(v2);
 
     // Make sure a is the major and b is the minor
     if (b > a) {
       [a, b] = [b, a];
-      [v1x, v1y, v2x, v2y] = [v2x, v2y, v1x, v1y];
+      [v1, v2] = [v2, v1];
     }
 
     // Calculate angle of rotation
-    let angle = Math.atan2(v1y - centerY, v1x - centerX);
+    let angle = Math.atan2(v1.y - center.y, v1.x - center.x);
 
     // Calculate foci using semiaxes
     let c = Math.sqrt(a ** 2 - b ** 2);
-    let f1x = centerX + c * Math.cos(angle);
-    let f1y = centerY + c * Math.sin(angle);
-    let f2x = centerX - c * Math.cos(angle);
-    let f2y = centerY - c * Math.sin(angle);
+    // Thankfully fromAngle is unaffected by angleMode
+    let f1 = p5.Vector.add(center, p5.Vector.fromAngle(angle, c));
+    let f2 = p5.Vector.sub(center, p5.Vector.fromAngle(angle, c));
 
     return {
       type: "ellipse",
-      x: centerX,
-      y: centerY,
-      dia1x: dia1x,
-      dia1y: dia1y,
-      dia2x: dia2x,
-      dia2y: dia2y,
+      center: center,
+      dia1: dia1,
+      dia2: dia2,
       a: a,
       b: b,
-      f1x: f1x,
-      f1y: f1y,
-      f2x: f2x,
-      f2y: f2y,
+      f1: f1,
+      f2: f2,
       r: a * 2,
       angle: angle,
     };
   }
 
   // Check which side of a line a point is on
-  static sideOfLine(x, y, line) {
+  static sideOfLine(p, line) {
     return Math.sign(
-      line.vy * x - line.vx * y - (line.vy * line.x1 - line.vx * line.y1)
+      line.v.y * p.x -
+        line.v.x * p.y -
+        (line.v.y * line.p1.x - line.v.x * line.p1.y)
     );
   }
 
@@ -305,17 +272,15 @@ class Hitbox {
 
   static collideCoordCoord(coord1, coord2) {
     return (
-      Math.abs(coord1.x - coord2.x) < EPSILON &&
-      Math.abs(coord1.y - coord2.y) < EPSILON
+      Math.abs(coord1.p.x - coord2.p.x) < EPSILON &&
+      Math.abs(coord1.p.y - coord2.p.y) < EPSILON
     );
   }
 
   static collideCoordLine(coord, line) {
     return (
       Math.abs(
-        Hitbox.distance(coord.x, coord.y, line.x1, line.y1) +
-          Hitbox.distance(coord.x, coord.y, line.x2, line.y2) -
-          Hitbox.distance(line.x1, line.y1, line.x2, line.y2)
+        coord.p.dist(line.p1) + coord.p.dist(line.p2) - line.p1.dist(line.p2)
       ) < EPSILON
     );
   }
@@ -324,25 +289,21 @@ class Hitbox {
     // Ray casting algorithm - see https://stackoverflow.com/a/218081/2674563
 
     // Pick an arbitrary point outside the polygon
-    let x = min(poly.x) - 1000;
-    let y = min(poly.y) - 1000;
+    let p = createVector(
+      min(poly.ps.map((p) => p.x)) - 10000,
+      min(poly.ps.map((p) => p.y)) - 10000
+    );
 
     // Draw a line between the point and the target coord
-    let line = Hitbox.makeLine(x, y, coord.x, coord.y);
+    let line = Hitbox.makeLine(p, coord.p);
 
     // Count how many times the line intersects the polygon
-
     let intersections = 0;
-    for (let i = 0; i < poly.x.length; i++) {
+    for (let i = 0; i < poly.ps.length; i++) {
       if (
         Hitbox.collideLineLine(
           line,
-          Hitbox.makeLine(
-            poly.x[i],
-            poly.y[i],
-            poly.x[(i + 1) % poly.x.length],
-            poly.y[(i + 1) % poly.x.length]
-          )
+          Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length])
         )
       ) {
         intersections++;
@@ -351,17 +312,12 @@ class Hitbox {
       // If we intersect with any vertices, then we double-count, so subtract back
       // Also need to check sidedness - see https://stackoverflow.com/q/14130742/2674563
       if (
-        Hitbox.sideOfLine(
-          poly.x[(i + 1) % poly.x.length],
-          poly.y[(i + 1) % poly.x.length],
-          line
-        ) !=
+        Hitbox.sideOfLine(poly.ps[(i + 1) % poly.ps.length], line) !=
           Hitbox.sideOfLine(
-            poly.x[(i - 1 + poly.x.length) % poly.x.length],
-            poly.y[(i - 1 + poly.x.length) % poly.x.length],
+            poly.ps[(i - 1 + poly.ps.length) % poly.ps.length],
             line
           ) &&
-        Hitbox.collideCoordLine({ x: poly.x[i], y: poly.y[i] }, line)
+        Hitbox.collideCoordLine({ type: "coord", p: poly.ps[i] }, line)
       ) {
         intersections--;
       }
@@ -372,50 +328,43 @@ class Hitbox {
   }
 
   static collideCoordEllipse(coord, ellipse) {
-    return (
-      Hitbox.distance(coord.x, coord.y, ellipse.f1x, ellipse.f1y) +
-        Hitbox.distance(coord.x, coord.y, ellipse.f2x, ellipse.f2y) <=
-      ellipse.r
-    );
+    // Geometric definition of an ellipse:
+    // The set of all points for which the sum of a point's distance from the two foci is equal to some constant
+    return ellipse.f1.dist(coord.p) + ellipse.f2.dist(coord.p) <= ellipse.r;
   }
 
   static collideLineLine(line1, line2) {
-    let denom = line1.vx * line2.vy - line2.vx * line1.vy;
+    let denom = line1.v.x * line2.v.y - line2.v.x * line1.v.y;
 
     if (denom == 0) {
       // Lines are parallel
       return (
-        Hitbox.collideCoordLine({ x: line1.x1, y: line1.y1 }, line2) ||
-        Hitbox.collideCoordLine({ x: line1.x2, y: line1.y2 }, line2)
+        Hitbox.collideCoordLine({ type: "coord", p: line1.p1 }, line2) ||
+        Hitbox.collideCoordLine({ type: "coord", p: line1.p2 }, line2)
       );
     }
 
     let t1 =
-      (line2.vx * (line1.y1 - line2.y1) + line2.vy * (line2.x1 - line1.x1)) /
+      (line2.v.x * (line1.p1.y - line2.p1.y) +
+        line2.v.y * (line2.p1.x - line1.p1.x)) /
       denom;
-    let intersectionX = line1.x1 + line1.vx * t1;
-    let intersectionY = line1.y1 + line1.vy * t1;
+    let intersection = p5.Vector.add(line1.p1, p5.Vector.mult(line1.v, t1));
 
     return (
-      Hitbox.collideCoordLine({ x: intersectionX, y: intersectionY }, line1) &&
-      Hitbox.collideCoordLine({ x: intersectionX, y: intersectionY }, line2)
+      Hitbox.collideCoordLine({ type: "coord", p: intersection }, line1) &&
+      Hitbox.collideCoordLine({ type: "coord", p: intersection }, line2)
     );
   }
 
   static collideLinePoly(line, poly) {
     return (
-      Hitbox.collideCoordPoly({ x: line.x1, y: line.y1 }, poly) ||
-      Hitbox.collideCoordPoly({ x: line.x2, y: line.y2 }, poly) ||
-      [...Array(poly.x.length).keys()].reduce(
+      Hitbox.collideCoordPoly({ type: "coord", p: line.p1 }, poly) ||
+      Hitbox.collideCoordPoly({ type: "coord", p: line.p2 }, poly) ||
+      [...Array(poly.ps.length).keys()].reduce(
         (l, i) =>
           l ||
           Hitbox.collideLineLine(
-            Hitbox.makeLine(
-              poly.x[i],
-              poly.y[i],
-              poly.x[(i + 1) % poly.x.length],
-              poly.y[(i + 1) % poly.x.length]
-            ),
+            Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]),
             line
           )
       )
@@ -426,50 +375,53 @@ class Hitbox {
     // Translate and rotate the line so we can put the ellipse flat at the origin, for cleaner math
     let mat = new DOMMatrix()
       .rotate((180 / PI) * -ellipse.angle)
-      .translate(-ellipse.x, -ellipse.y);
+      .translate(-ellipse.center.x, -ellipse.center.y);
     let tline = Hitbox.transformLine(line, mat);
 
     // Calculate discriminant to see if the line intersects the ellipse
     // (Math is from sagemath, gotten by plugging x = x0 + vx * t and y = y0 + vy * t into x^2 / a^2 + y^2 / b^2 = 1 and expanding into a quadratic of t)
-    let a = tline.x1 ** 2 / ellipse.a ** 2 + tline.y1 ** 2 / ellipse.b ** 2 - 1;
+    let a =
+      tline.p1.x ** 2 / ellipse.a ** 2 + tline.p1.y ** 2 / ellipse.b ** 2 - 1;
     let b =
-      (2 * tline.vx * tline.x1) / ellipse.a ** 2 +
-      (2 * tline.vy * tline.y1) / ellipse.b ** 2;
-    let c = tline.vx ** 2 / ellipse.a ** 2 + tline.vy ** 2 / ellipse.b ** 2;
+      (2 * tline.v.x * tline.p1.x) / ellipse.a ** 2 +
+      (2 * tline.v.y * tline.p1.y) / ellipse.b ** 2;
+    let c = tline.v.x ** 2 / ellipse.a ** 2 + tline.v.y ** 2 / ellipse.b ** 2;
     let disc = b ** 2 - 4 * a * c;
 
+    // If discriminant is positive we have 2 solutions, if it's zero we have 1 solution.
+    // Only when it's negative are there no solutions and hence no intersections
     if (Math.sign(disc) >= 0) {
-      // If an intersection with the line occurs, we calculate the t1 and t2 where it happens to see if it lies on our line *segment*
+      // If an intersection with the line occurs, we calculate the t1 and t2 where it happens to see if it lies on our line *segment* (as opposed to just our line)
       let t1 =
         -(
-          ellipse.b ** 2 * tline.vx * tline.x1 +
-          ellipse.a ** 2 * tline.vy * tline.y1 +
+          ellipse.b ** 2 * tline.v.x * tline.p1.x +
+          ellipse.a ** 2 * tline.v.y * tline.p1.y +
           Math.sqrt(
-            ellipse.b ** 2 * tline.vx ** 2 +
-              ellipse.a ** 2 * tline.vy ** 2 -
-              tline.vy ** 2 * tline.x1 ** 2 +
-              2 * tline.vx * tline.vy * tline.x1 * tline.y1 -
-              tline.vx ** 2 * tline.y1 ** 2
+            ellipse.b ** 2 * tline.v.x ** 2 +
+              ellipse.a ** 2 * tline.v.y ** 2 -
+              tline.v.y ** 2 * tline.p1.x ** 2 +
+              2 * tline.v.x * tline.v.y * tline.p1.x * tline.p1.y -
+              tline.v.x ** 2 * tline.p1.y ** 2
           ) *
             ellipse.a *
             ellipse.b
         ) /
-        (ellipse.b ** 2 * tline.vx ** 2 + ellipse.a ** 2 * tline.vy ** 2);
+        (ellipse.b ** 2 * tline.v.x ** 2 + ellipse.a ** 2 * tline.v.y ** 2);
       let t2 =
         -(
-          ellipse.b ** 2 * tline.vx * tline.x1 +
-          ellipse.a ** 2 * tline.vy * tline.y1 -
+          ellipse.b ** 2 * tline.v.x * tline.p1.x +
+          ellipse.a ** 2 * tline.v.y * tline.p1.y -
           Math.sqrt(
-            ellipse.b ** 2 * tline.vx ** 2 +
-              ellipse.a ** 2 * tline.vy ** 2 -
-              tline.vy ** 2 * tline.x1 ** 2 +
-              2 * tline.vx * tline.vy * tline.x1 * tline.y1 -
-              tline.vx ** 2 * tline.y1 ** 2
+            ellipse.b ** 2 * tline.v.x ** 2 +
+              ellipse.a ** 2 * tline.v.y ** 2 -
+              tline.v.y ** 2 * tline.p1.x ** 2 +
+              2 * tline.v.x * tline.v.y * tline.p1.x * tline.p1.y -
+              tline.v.x ** 2 * tline.p1.y ** 2
           ) *
             ellipse.a *
             ellipse.b
         ) /
-        (ellipse.b ** 2 * tline.vx ** 2 + ellipse.a ** 2 * tline.vy ** 2);
+        (ellipse.b ** 2 * tline.v.x ** 2 + ellipse.a ** 2 * tline.v.y ** 2);
       if ((t1 >= 0 && t1 <= tline.t) || (t2 >= 0 && t2 <= tline.t)) {
         return true;
       }
@@ -478,25 +430,21 @@ class Hitbox {
     // If the line doesn't intersect the ellipse, then we just check its endpoints - it could still be entirely within the ellipse
     // Technically this could equivalently be && instead of || but no reason not to play it safe
     return (
-      Hitbox.collideCoordEllipse({ x: line.x1, y: line.y1 }, ellipse) ||
-      Hitbox.collideCoordEllipse({ x: line.x2, y: line.y2 }, ellipse)
+      Hitbox.collideCoordEllipse({ type: "coords", p: line.p1 }, ellipse) ||
+      Hitbox.collideCoordEllipse({ type: "coords", p: line.p2 }, ellipse)
     );
   }
 
   static collidePolyPoly(poly1, poly2) {
-    for (let i = 0; i < poly1.x.length; i++) {
+    for (let i = 0; i < poly1.ps.length; i++) {
       let line1 = Hitbox.makeLine(
-        poly1.x[i],
-        poly1.y[i],
-        poly1.x[(i + 1) % poly1.x.length],
-        poly1.y[(i + 1) % poly1.x.length]
+        poly1.ps[i],
+        poly1.ps[(i + 1) % poly1.ps.length]
       );
-      for (let j = 0; j < poly2.x.length; j++) {
+      for (let j = 0; j < poly2.ps.length; j++) {
         let line2 = Hitbox.makeLine(
-          poly2.x[j],
-          poly2.y[j],
-          poly2.x[(j + 1) % poly2.x.length],
-          poly2.y[(j + 1) % poly2.x.length]
+          poly2.ps[j],
+          poly2.ps[(j + 1) % poly2.ps.length]
         );
         if (Hitbox.collideLineLine(line1, line2)) {
           return true;
@@ -505,25 +453,20 @@ class Hitbox {
     }
 
     return (
-      [...Array(poly1.x.length).keys()].reduce(
+      [...Array(poly1.ps.length).keys()].reduce(
         (l, i) =>
-          l || Hitbox.collideCoordPoly({ x: poly1.x[i], y: poly1.y[i] }, poly2)
+          l || Hitbox.collideCoordPoly({ type: "coord", p: poly1.ps[i] }, poly2)
       ) ||
-      [...Array(poly2.x.length).keys()].reduce(
+      [...Array(poly2.ps.length).keys()].reduce(
         (l, i) =>
-          l || Hitbox.collideCoordPoly({ x: poly2.x[i], y: poly2.y[i] }, poly1)
+          l || Hitbox.collideCoordPoly({ type: "coord", p: poly2.ps[i] }, poly1)
       )
     );
   }
 
   static collidePolyEllipse(poly, ellipse) {
-    for (let i = 0; i < poly.x.length; i++) {
-      let line = Hitbox.makeLine(
-        poly.x[i],
-        poly.y[i],
-        poly.x[(i + 1) % poly.x.length],
-        poly.y[(i + 1) % poly.x.length]
-      );
+    for (let i = 0; i < poly.ps.length; i++) {
+      let line = Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]);
 
       if (Hitbox.collideLineEllipse(line, ellipse)) {
         return true;
@@ -531,11 +474,11 @@ class Hitbox {
     }
 
     return (
-      [...Array(poly.x.length).keys()].reduce(
+      [...Array(poly.ps.length).keys()].reduce(
         (l, i) =>
           l ||
-          Hitbox.collideCoordEllipse({ x: poly.x[i], y: poly.y[i] }, ellipse)
-      ) || Hitbox.collideCoordPoly({ x: ellipse.x, y: ellipse.y }, poly)
+          Hitbox.collideCoordEllipse({ type: "coord", p: poly.ps[i] }, ellipse)
+      ) || Hitbox.collideCoordPoly({ type: "coord", p: ellipse.center }, poly)
     );
   }
 
@@ -687,7 +630,7 @@ class Hitbox {
        */
       let r = new DOMMatrix()
         .rotate((180 / PI) * -ellipse.angle)
-        .transformPoint(new DOMPoint(ellipse.x, ellipse.y));
+        .transformPoint(new DOMPoint(ellipse.center.x, ellipse.center.y));
       let a = r.x,
         c = r.y;
 
@@ -711,8 +654,14 @@ class Hitbox {
 
     // First check if one ellipse is within the other
     if (
-      Hitbox.collideCoordEllipse({ x: ellipse1.x, y: ellipse1.y }, ellipse2) ||
-      Hitbox.collideCoordEllipse({ x: ellipse2.x, y: ellipse2.y }, ellipse1)
+      Hitbox.collideCoordEllipse(
+        { type: "coord", p: ellipse1.center },
+        ellipse2
+      ) ||
+      Hitbox.collideCoordEllipse(
+        { type: "coord", p: ellipse2.center },
+        ellipse1
+      )
     ) {
       return true;
     }
