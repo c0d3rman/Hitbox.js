@@ -50,6 +50,7 @@ class Hitbox {
   // "debug" - draw hitboxes as transparent red shapes
   setDraw(draw) {
     this.draw = draw;
+    return this;
   }
 
   // Public functions - p5 shape duplications
@@ -69,6 +70,8 @@ class Hitbox {
       type: "coord",
       p: Hitbox.transformPoint(p),
     });
+
+    return this;
   }
 
   line(x1, y1, x2, y2) {
@@ -81,15 +84,43 @@ class Hitbox {
         Hitbox.transformPoint(createVector(x2, y2))
       )
     );
+
+    return this;
   }
 
   rect(...args) {
     this.doDraw(() => rect(...args));
 
-    let [x, y, width, height] = this.handleRectAndEllipseModes(
-      args,
-      window._renderer._rectMode
-    );
+    let x, y, width, height;
+    switch (window._renderer._rectMode) {
+      case p5.prototype.CORNER:
+        [x, y, width, height] = args.slice(0, 4);
+        break;
+      case p5.prototype.CORNERS:
+        [x, y, width, height] = [
+          Math.min(args[0], args[2]),
+          Math.min(args[1], args[3]),
+          Math.abs(args[2] - args[0]),
+          Math.abs(args[3] - args[1]),
+        ];
+        break;
+      case p5.prototype.RADIUS:
+        [x, y, width, height] = [
+          args[0] - args[2],
+          args[1] - args[3],
+          args[2] * 2,
+          args[3] * 2,
+        ];
+        break;
+      case p5.prototype.CENTER:
+        [x, y, width, height] = [
+          args[0] - args[2] / 2,
+          args[1] - args[3] / 2,
+          args[2],
+          args[3],
+        ];
+        break;
+    }
 
     this.components.push(
       Hitbox.transformPolygon({
@@ -102,6 +133,8 @@ class Hitbox {
         ],
       })
     );
+
+    return this;
   }
 
   triangle(x1, y1, x2, y2, x3, y3) {
@@ -113,10 +146,12 @@ class Hitbox {
         ps: [createVector(x1, y1), createVector(x2, y2), createVector(x3, y3)],
       })
     );
+
+    return this;
   }
 
   square(x, y, s) {
-    this.rect(x, y, s, s);
+    return this.rect(x, y, s, s);
   }
 
   quad(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -133,15 +168,43 @@ class Hitbox {
         ],
       })
     );
+
+    return this;
   }
 
   ellipse(...args) {
     this.doDraw(() => ellipse(...args));
 
-    let [x, y, width, height] = this.handleRectAndEllipseModes(
-      args,
-      window._renderer._ellipseMode
-    );
+    // Support for no-height syntax
+    if (args.length == 3) {
+      args.push(args[2]);
+    }
+
+    let x, y, width, height;
+    switch (window._renderer._ellipseMode) {
+      case p5.prototype.CORNER:
+        [x, y, width, height] = [
+          args[0] + args[2] / 2,
+          args[1] + args[3] / 2,
+          args[2],
+          args[3],
+        ];
+        break;
+      case p5.prototype.CORNERS:
+        [x, y, width, height] = [
+          (args[0] + args[2]) / 2,
+          (args[1] + args[3]) / 2,
+          Math.abs(args[2] - args[0]),
+          Math.abs(args[3] - args[1]),
+        ];
+        break;
+      case p5.prototype.RADIUS:
+        [x, y, width, height] = [args[0], args[1], args[2] * 2, args[3] * 2];
+        break;
+      case p5.prototype.CENTER:
+        [x, y, width, height] = args.slice(0, 4);
+        break;
+    }
 
     // Get conjugate diameters by transforming the original vertices of the ellipse
     this.components.push(
@@ -151,10 +214,12 @@ class Hitbox {
         Hitbox.transformPoint(createVector(x, y + height / 2))
       )
     );
+
+    return this;
   }
 
   circle(x, y, d) {
-    this.ellipse(x, y, d, d);
+    return this.ellipse(x, y, d, d);
   }
 
   // Private helpers
@@ -166,29 +231,6 @@ class Hitbox {
       this.collisionFnMap[type2 + "," + type1] = function (a, b) {
         return fn(b, a);
       };
-    }
-  }
-
-  handleRectAndEllipseModes(args, mode) {
-    // Support for no-height syntax
-    if (args.length == 3) {
-      args.push(args[2]);
-    }
-
-    switch (mode) {
-      case p5.prototype.CORNER:
-        return args.slice(0, 4);
-      case p5.prototype.CORNERS:
-        return [
-          Math.min(args[0], args[2]),
-          Math.min(args[1], args[3]),
-          Math.abs(args[2] - args[0]),
-          Math.abs(args[3] - args[1]),
-        ];
-      case p5.prototype.RADIUS:
-        return [args[0] - args[2], args[1] - args[3], args[2] * 2, args[3] * 2];
-      case p5.prototype.CENTER:
-        return [args[0] - args[2] / 2, args[1] - args[3] / 2, args[2], args[3]];
     }
   }
 
