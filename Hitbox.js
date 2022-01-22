@@ -22,8 +22,8 @@ class Hitbox {
     );
   }
 
-  // Public functions - collisions
-  // =============================
+  // Public functions - collisions & other
+  // =====================================
 
   doesCollide(other) {
     for (let i = 0; i < this.components.length; i++) {
@@ -44,15 +44,30 @@ class Hitbox {
     });
   }
 
+  // Turn drawing on and off. Valid values:
+  // true - draw as normal (default)
+  // false - don't draw
+  // "debug" - draw hitboxes as transparent red shapes
+  setDraw(draw) {
+    this.draw = draw;
+  }
+
   // Public functions - p5 shape duplications
   // ========================================
 
-  // Special - does not draw
-  coord(x, y) {
-    [x, y] = Hitbox.transformPoint(createVector(x, y));
+  point(...args) {
+    this.doDraw(() => point(...args));
+
+    let p;
+    if (args.length === 1 && args[0] instanceof p5.Vector) {
+      p = args[0];
+    } else {
+      p = createVector(args[0], args[1]);
+    }
+
     this.components.push({
       type: "coord",
-      p: createVector(x, y),
+      p: Hitbox.transformPoint(p),
     });
   }
 
@@ -69,9 +84,8 @@ class Hitbox {
   }
 
   rect(x, y, width, height) {
-    if (this.draw) {
-      rect(x, y, width, height);
-    }
+    this.doDraw(() => rect(x, y, width, height));
+
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
@@ -86,9 +100,8 @@ class Hitbox {
   }
 
   triangle(x1, y1, x2, y2, x3, y3) {
-    if (this.draw) {
-      triangle(x1, y1, x2, y2, x3, y3);
-    }
+    this.doDraw(() => triangle(x1, y1, x2, y2, x3, y3));
+
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
@@ -102,9 +115,8 @@ class Hitbox {
   }
 
   quad(x1, y1, x2, y2, x3, y3, x4, y4) {
-    if (this.draw) {
-      quad(x1, y1, x2, y2, x3, y3, x4, y4);
-    }
+    this.doDraw(() => quad(x1, y1, x2, y2, x3, y3, x4, y4));
+    
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
@@ -119,9 +131,7 @@ class Hitbox {
   }
 
   ellipse(x, y, width, height) {
-    if (this.draw) {
-      ellipse(x, y, width, height);
-    }
+    this.doDraw(() => ellipse(x, y, width, height));
 
     // Get conjugate diameters by transforming the original vertices of the ellipse
     this.components.push(
@@ -146,6 +156,19 @@ class Hitbox {
       this.collisionFnMap[type2 + "," + type1] = function (a, b) {
         return fn(b, a);
       };
+    }
+  }
+
+  // A helper function for handling drawing
+  doDraw(f) {
+    if (this.draw) {
+      push();
+      if (this.draw == "debug") {
+        noStroke();
+        fill(color(255, 0, 0, 100));
+      }
+      f();
+      pop();
     }
   }
 
