@@ -83,8 +83,13 @@ class Hitbox {
     );
   }
 
-  rect(x, y, width, height) {
-    this.doDraw(() => rect(x, y, width, height));
+  rect(...args) {
+    this.doDraw(() => rect(...args));
+
+    let [x, y, width, height] = this.handleRectAndEllipseModes(
+      args,
+      window._renderer._rectMode
+    );
 
     this.components.push(
       Hitbox.transformPolygon({
@@ -116,7 +121,7 @@ class Hitbox {
 
   quad(x1, y1, x2, y2, x3, y3, x4, y4) {
     this.doDraw(() => quad(x1, y1, x2, y2, x3, y3, x4, y4));
-    
+
     this.components.push(
       Hitbox.transformPolygon({
         type: "poly",
@@ -130,8 +135,13 @@ class Hitbox {
     );
   }
 
-  ellipse(x, y, width, height) {
-    this.doDraw(() => ellipse(x, y, width, height));
+  ellipse(...args) {
+    this.doDraw(() => ellipse(...args));
+
+    let [x, y, width, height] = this.handleRectAndEllipseModes(
+      args,
+      window._renderer._ellipseMode
+    );
 
     // Get conjugate diameters by transforming the original vertices of the ellipse
     this.components.push(
@@ -156,6 +166,29 @@ class Hitbox {
       this.collisionFnMap[type2 + "," + type1] = function (a, b) {
         return fn(b, a);
       };
+    }
+  }
+
+  handleRectAndEllipseModes(args, mode) {
+    // Support for no-height syntax
+    if (args.length == 3) {
+      args.push(args[2]);
+    }
+
+    switch (mode) {
+      case p5.prototype.CORNER:
+        return args.slice(0, 4);
+      case p5.prototype.CORNERS:
+        return [
+          Math.min(args[0], args[2]),
+          Math.min(args[1], args[3]),
+          Math.abs(args[2] - args[0]),
+          Math.abs(args[3] - args[1]),
+        ];
+      case p5.prototype.RADIUS:
+        return [args[0] - args[2], args[1] - args[3], args[2] * 2, args[3] * 2];
+      case p5.prototype.CENTER:
+        return [args[0] - args[2] / 2, args[1] - args[3] / 2, args[2], args[3]];
     }
   }
 
