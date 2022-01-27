@@ -1,5 +1,114 @@
 let EPSILON = 0.00001;
 
+// For heuristic checking of whether components are close enough to each other to be worth checking for a collision.
+// Saves a lot of time performing expensive ellipse computations.
+class HitboxBoundingCircle {
+  constructor(center, radius) {
+    this.center = center;
+    this.radius = radius;
+  }
+
+  collidesWith(other) {
+    return (
+      this.center.dist(other.center) <= this.radius + other.radius + EPSILON
+    );
+  }
+
+  contains(p) {
+    return p.dist(this.center) <= this.radius + EPSILON;
+  }
+
+  // Returns a shuffled copy of an array.
+  // Adapted from https://stackoverflow.com/a/12646864/2674563
+  static shuffle(array) {
+    array = [...array];
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  // Returns the smallest circle that encloses all the given points.
+  // Uses Welzl's algorithm.
+  // If you know any points that  must be on the circle's edge, you can pass them in as R.
+  static fromPoints(P, R = [], didShuffle = false) {
+    // Only shuffle P once
+    if (!didShuffle) {
+      P = [...P]; // Make a copy of P to not interfere with the caller
+      HitboxBoundingCircle.shuffle(P);
+    }
+
+    // Base case
+    if (P.length == 0 || R.length == 3) {
+      if (R.length == 0) {
+        return new HitboxBoundingCircle(createVector(0, 0), -1); // Dummy circle with negative radius that contains nothing
+      }
+
+      if (R.length == 1) {
+        return new HitboxBoundingCircle(R[0], 0);
+      }
+
+      if (R.length == 2) {
+        return new HitboxBoundingCircle(
+          p5.Vector.add(R[0], R[1]).div(2),
+          R[0].dist(R[1]) / 2
+        );
+      }
+
+      // 3-point case
+      // Math from wikipedia.org/wiki/Circumscribed_circle#Circumcenter_coordinates
+      let o = createVector(
+        (Math.min(R.map((p) => p.x)) + Math.max(R.map((p) => p.x))) / 2,
+        (Math.min(R.map((p) => p.y)) + Math.max(R.map((p) => p.y))) / 2
+      );
+      let a = p5.Vector.sub(R[0], o);
+      let b = p5.Vector.sub(R[1], o);
+      let c = p5.Vector.sub(R[2], o);
+      let d = (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) * 2;
+
+      if (d == 0) {
+        // The three points form a line, so get the two outer ones and recurse to the two-point case
+        return HitboxBoundingCircle.fromPoints(
+          [],
+          [
+            R.reduce((p1, p2) => (p1.x < p2.x ? p1 : p2)),
+            R.reduce((p1, p2) => (p1.x > p2.x ? p1 : p2)),
+          ],
+          true
+        );
+      }
+
+      o.add(
+        createVector(
+          (a.magSq() * (b.y - c.y) +
+            b.magSq() * (c.y - a.y) +
+            c.magSq() * (a.y - b.y)) /
+            d,
+          (a.magSq() * (c.x - b.x) +
+            b.magSq() * (a.x - c.x) +
+            c.magSq() * (b.x - a.x)) /
+            d
+        )
+      );
+
+      return new HitboxBoundingCircle(o, o.dist(a));
+    }
+
+    // Get the first point (which is random because we shuffled P)
+    let p = P[0];
+    // Recursively find the smallest circle which includes all of the other points
+    let D = HitboxBoundingCircle.fromPoints(P.slice(1), R, true);
+    // If p is in said circle already, then that's our cirlce
+    if (D.contains(p)) {
+      return D;
+    }
+
+    // If not, p must be on the boundary of the true circle - recurse with that assumption in place
+    return HitboxBoundingCircle.fromPoints(P.slice(1), [...R, p], true);
+  }
+}
+
 class HitboxCoord {
   constructor(p) {
     this.type = "Coord";
@@ -26,6 +135,8 @@ class HitboxLine {
 
     // For checking if the we're entirely inside a filled shape
     this.representativePoint = p1;
+
+    this.boundingCircle = HitboxBoundingCircle.fromPoints([], [p1, p2], true); // P is "shuffled" because it's empty
   }
 
   // Check which side of the line a point is on
@@ -55,6 +166,8 @@ class HitboxPoly {
     for (let i = 0; i < ps.length; i++) {
       this.lines.push(new HitboxLine(ps[i], ps[(i + 1) % ps.length]));
     }
+
+    this.boundingCircle = HitboxBoundingCircle.fromPoints(ps);
   }
 }
 
@@ -125,6 +238,8 @@ class HitboxEllipse {
     // r is the sum of distances between any point on the ellipse and the two foci
     // It's also just the major axis length
     this.r = this.a * 2;
+
+    this.boundingCircle = new HitboxBoundingCircle(center, this.a);
   }
 }
 
@@ -162,6 +277,9 @@ class HitboxArc {
     ) {
       this.lines.push(new HitboxLine(this.startV, this.stopV));
     }
+
+    // Not the optimal bounding circle for small arcs, but who cares
+    this.boundingCircle = new HitboxBoundingCircle(ellipse.center, ellipse.a);
   }
 }
 
@@ -243,7 +361,16 @@ class Hitbox {
   collidesWith(other) {
     for (let A of this.components) {
       for (let B of other.components) {
-        // First, handle fill: if component A includes its fill, check if component B is entirely within component A (and vice versa) by testing a representative point
+        // First, check bounding circles if they exist. If the bounding circles don't touch, no reason to keep going.
+        if (
+          "boundingCircle" in A &&
+          "boundingCircle" in B &&
+          !A.boundingCircle.collidesWith(B.boundingCircle)
+        ) {
+          continue;
+        }
+
+        // Now, handle fill: if component A includes its fill, check if component B is entirely within component A (and vice versa) by testing a representative point
         if (
           A.includeFill &&
           this.collisionFnMap["coordInside" + A.type](
@@ -251,7 +378,6 @@ class Hitbox {
             A
           )
         ) {
-          // console.log([A, B])
           return true;
         }
         if (
@@ -261,7 +387,6 @@ class Hitbox {
             B
           )
         ) {
-          // console.log([B, A])
           return true;
         }
 
@@ -282,7 +407,7 @@ class Hitbox {
     return false;
   }
 
-  doesCollidePoint(x, y) {
+  collidesWithPoint(x, y) {
     return this.collidesWith({
       components: [createVector(x, y)],
     });
@@ -988,15 +1113,18 @@ class Hitbox {
     );
   }
 
-  static collideLineLine(line1, line2) {
+  static collideLineLine(line1, line2, returnCollisions) {
     let denom = line1.v.x * line2.v.y - line2.v.x * line1.v.y;
 
     if (denom == 0) {
       // Lines are parallel, so we just need to check if either of one line's endpoints are within the other
-      return (
+      if (
         Hitbox.collideCoordLine(new HitboxCoord(line1.p1), line2) ||
         Hitbox.collideCoordLine(new HitboxCoord(line1.p2), line2)
-      );
+      ) {
+        // Infinite collisions (unless we're just barely adjacent, but whatever)
+        return returnCollisions ? [Infinity] : true;
+      }
     }
 
     let t1 =
@@ -1007,14 +1135,19 @@ class Hitbox {
       p5.Vector.add(line1.p1, p5.Vector.mult(line1.v, t1))
     );
 
-    return (
+    let didCollide =
       Hitbox.collideCoordLine(intersection, line1) &&
-      Hitbox.collideCoordLine(intersection, line2)
-    );
+      Hitbox.collideCoordLine(intersection, line2);
+
+    if (returnCollisions) {
+      return didCollide ? [intersection] : [];
+    } else {
+      return didCollide;
+    }
   }
 
   static collideLinePoly(line, poly) {
-    return poly.lines.some((l) => Hitbox.collideLineLine(l, line))
+    return poly.lines.some((l) => Hitbox.collideLineLine(l, line));
   }
 
   static collideLineEllipse(line, ellipse) {
@@ -1072,7 +1205,7 @@ class Hitbox {
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -1191,17 +1324,6 @@ class Hitbox {
   }
 
   static collideEllipseEllipse(ellipse1, ellipse2) {
-    // First check whether they're even close to each other - if they were circles, would they intersect?
-    // This is not strictly necessary, but it's very cheap
-    // and saves a lot of time if you have many ellipses flying around
-    if (
-      ellipse1.center.dist(ellipse2.center) - (ellipse1.a + ellipse2.a) >
-      EPSILON
-    ) {
-      return false;
-    }
-
-    // Alright, do the heavy lifting
     // We can just check if any intersections exist without worrying about where they are
     return (
       Hitbox.getEllipseEllipseIntersection(ellipse1, ellipse2, false).length > 0
@@ -1209,17 +1331,6 @@ class Hitbox {
   }
 
   static collideEllipseArc(ellipse, arc) {
-    // First check whether they're even close to each other - if they were circles, would they intersect?
-    // This is not strictly necessary, but it's very cheap
-    // and saves a lot of time if you have many ellipses flying around
-    if (
-      arc.ellipse.center.dist(ellipse.center) - (arc.ellipse.a + ellipse.a) >
-      EPSILON
-    ) {
-      return false;
-    }
-
-    // Alright, do the heavy lifting
     let intersections = Hitbox.getEllipseEllipseIntersection(
       ellipse,
       arc.ellipse
@@ -1234,18 +1345,6 @@ class Hitbox {
   }
 
   static collideArcArc(arc1, arc2) {
-    // First check whether they're even close to each other - if they were circles, would they intersect?
-    // This is not strictly necessary, but it's very cheap
-    // and saves a lot of time if you have many ellipses flying around
-    if (
-      arc1.ellipse.center.dist(arc2.ellipse.center) -
-        (arc1.ellipse.a + arc2.ellipse.a) >
-      EPSILON
-    ) {
-      return false;
-    }
-
-    // Alright, do the heavy lifting
     let intersections = Hitbox.getEllipseEllipseIntersection(
       arc1.ellipse,
       arc2.ellipse
