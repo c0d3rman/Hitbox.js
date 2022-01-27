@@ -992,7 +992,7 @@ class Hitbox {
     let denom = line1.v.x * line2.v.y - line2.v.x * line1.v.y;
 
     if (denom == 0) {
-      // Lines are parallel
+      // Lines are parallel, so we just need to check if either of one line's endpoints are within the other
       return (
         Hitbox.collideCoordLine(new HitboxCoord(line1.p1), line2) ||
         Hitbox.collideCoordLine(new HitboxCoord(line1.p2), line2)
@@ -1014,18 +1014,7 @@ class Hitbox {
   }
 
   static collideLinePoly(line, poly) {
-    return (
-      Hitbox.collideCoordPoly(new HitboxCoord(line.p1), poly) ||
-      Hitbox.collideCoordPoly(new HitboxCoord(line.p2), poly) ||
-      [...Array(poly.ps.length).keys()].reduce(
-        (l, i) =>
-          l ||
-          Hitbox.collideLineLine(
-            new HitboxLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]),
-            line
-          )
-      )
-    );
+    return poly.lines.some((l) => Hitbox.collideLineLine(l, line))
   }
 
   static collideLineEllipse(line, ellipse) {
@@ -1083,59 +1072,23 @@ class Hitbox {
         return true;
       }
     }
-
-    // If the line doesn't intersect the ellipse, then we just check its endpoints - it could still be entirely within the ellipse
-    // Technically this could equivalently be && instead of || but no reason not to play it safe
-    return (
-      Hitbox.collideCoordEllipse(new HitboxCoord(line.p1), ellipse) ||
-      Hitbox.collideCoordEllipse(new HitboxCoord(line.p2), ellipse)
-    );
+    
+    return false;
   }
 
   static collidePolyPoly(poly1, poly2) {
-    for (let i = 0; i < poly1.ps.length; i++) {
-      let line1 = new HitboxLine(
-        poly1.ps[i],
-        poly1.ps[(i + 1) % poly1.ps.length]
-      );
-      for (let j = 0; j < poly2.ps.length; j++) {
-        let line2 = new HitboxLine(
-          poly2.ps[j],
-          poly2.ps[(j + 1) % poly2.ps.length]
-        );
+    for (const line1 of poly1.lines) {
+      for (const line2 of poly2.lines) {
         if (Hitbox.collideLineLine(line1, line2)) {
           return true;
         }
       }
     }
-
-    return (
-      [...Array(poly1.ps.length).keys()].reduce(
-        (l, i) =>
-          l || Hitbox.collideCoordPoly(new HitboxCoord(poly1.ps[i]), poly2)
-      ) ||
-      [...Array(poly2.ps.length).keys()].reduce(
-        (l, i) =>
-          l || Hitbox.collideCoordPoly(new HitboxCoord(poly2.ps[i]), poly1)
-      )
-    );
+    return false;
   }
 
   static collidePolyEllipse(poly, ellipse) {
-    for (let i = 0; i < poly.ps.length; i++) {
-      let line = new HitboxLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]);
-
-      if (Hitbox.collideLineEllipse(line, ellipse)) {
-        return true;
-      }
-    }
-
-    return (
-      [...Array(poly.ps.length).keys()].reduce(
-        (l, i) =>
-          l || Hitbox.collideCoordEllipse(new HitboxCoord(poly.ps[i]), ellipse)
-      ) || Hitbox.collideCoordPoly(new HitboxCoord(ellipse.center), poly)
-    );
+    return poly.lines.some((l) => Hitbox.collideLineEllipse(l, ellipse));
   }
 
   // If all you care about is whether an intersection exists,
@@ -1272,7 +1225,7 @@ class Hitbox {
       arc.ellipse
     );
 
-    // At least one intersection has to be on the arc
+    // At least one intersection has to be on the arc, or the arc's lines (if any) have to inersect with the ellipse
     return (
       intersections.some((p) =>
         Hitbox.collideCoordArc(new HitboxCoord(p), arc)
