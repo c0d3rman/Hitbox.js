@@ -1,302 +1,82 @@
-EPSILON = 0.00001;
+let EPSILON = 0.00001;
 
-class Hitbox {
-  constructor(draw = true) {
-    this.draw = draw;
-    this.components = [];
-    this.collisionFnMap = {};
+class HitboxCoord {
+  constructor(p) {
+    this.type = "Coord";
+    this.includeFill = false; // No fill
+    this.p = p;
 
-    this.registerCollisionFn("coord", "coord", Hitbox.collideCoordCoord);
-    this.registerCollisionFn("coord", "line", Hitbox.collideCoordLine);
-    this.registerCollisionFn("coord", "poly", Hitbox.collideCoordPoly);
-    this.registerCollisionFn("coord", "ellipse", Hitbox.collideCoordEllipse);
-    this.registerCollisionFn("line", "line", Hitbox.collideLineLine);
-    this.registerCollisionFn("line", "poly", Hitbox.collideLinePoly);
-    this.registerCollisionFn("line", "ellipse", Hitbox.collideLineEllipse);
-    this.registerCollisionFn("poly", "poly", Hitbox.collidePolyPoly);
-    this.registerCollisionFn("poly", "ellipse", Hitbox.collidePolyEllipse);
-    this.registerCollisionFn(
-      "ellipse",
-      "ellipse",
-      Hitbox.collideEllipseEllipse
-    );
+    // For checking if the we're entirely inside a filled shape
+    this.representativePoint = p;
+  }
+}
+
+class HitboxLine {
+  constructor(p1, p2) {
+    this.type = "Line";
+    this.includeFill = false; // No fill
+
+    // Endpoints of the line
+    this.p1 = p1;
+    this.p2 = p2;
+
+    // Parametric representation of the line as p = p1 + vt
+    this.v = p5.Vector.sub(p2, p1).normalize();
+    this.t = p2.dist(p1);
+
+    // For checking if the we're entirely inside a filled shape
+    this.representativePoint = p1;
   }
 
-  // Public functions - collisions & other
-  // =====================================
-
-  doesCollide(other) {
-    for (let i = 0; i < this.components.length; i++) {
-      for (let j = 0; j < other.components.length; j++) {
-        let key = this.components[i].type + "," + other.components[j].type;
-        let collisionFn = this.collisionFnMap[key];
-        if (collisionFn(this.components[i], other.components[j])) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  doesCollidePoint(x, y) {
-    return this.doesCollide({
-      components: [{ type: "coord", p: createVector(x, y) }],
-    });
-  }
-
-  // Turn drawing on and off. Valid values:
-  // true - draw as normal (default)
-  // false - don't draw
-  // "debug" - draw hitboxes as transparent red shapes
-  setDraw(draw) {
-    this.draw = draw;
-    return this;
-  }
-
-  // Public functions - p5 shape duplications
-  // ========================================
-
-  point(...args) {
-    this.doDraw(() => point(...args));
-
-    let p;
-    if (args.length === 1 && args[0] instanceof p5.Vector) {
-      p = args[0];
-    } else {
-      p = createVector(args[0], args[1]);
+  // Check which side of the line a point is on
+  sideOf(p) {
+    if (Hitbox.collideCoordLine(new HitboxCoord(p), this)) {
+      return 0;
     }
 
-    this.components.push({
-      type: "coord",
-      p: Hitbox.transformPoint(p),
-    });
-
-    return this;
+    // We draw a vector between the line's starting point and p, and then cross it with the line's direction vector
+    return Math.sign(p5.Vector.sub(this.p1, p).cross(this.v).z);
   }
+}
 
-  line(x1, y1, x2, y2) {
-    if (this.draw) {
-      line(x1, y1, x2, y2);
-    }
-    this.components.push(
-      Hitbox.makeLine(
-        Hitbox.transformPoint(createVector(x1, y1)),
-        Hitbox.transformPoint(createVector(x2, y2))
-      )
-    );
+class HitboxPoly {
+  constructor(ps, includeFill) {
+    this.type = "Poly";
 
-    return this;
-  }
+    // Vertices of the polygon
+    this.ps = ps;
 
-  rect(...args) {
-    this.doDraw(() => rect(...args));
+    // Should this be an outline-only polygon, or should it include the inside
+    this.includeFill = includeFill;
+    this.representativePoint = ps[0];
 
-    let x, y, width, height;
-    switch (window._renderer._rectMode) {
-      case p5.prototype.CORNER:
-        [x, y, width, height] = args.slice(0, 4);
-        break;
-      case p5.prototype.CORNERS:
-        [x, y, width, height] = [
-          Math.min(args[0], args[2]),
-          Math.min(args[1], args[3]),
-          Math.abs(args[2] - args[0]),
-          Math.abs(args[3] - args[1]),
-        ];
-        break;
-      case p5.prototype.RADIUS:
-        [x, y, width, height] = [
-          args[0] - args[2],
-          args[1] - args[3],
-          args[2] * 2,
-          args[3] * 2,
-        ];
-        break;
-      case p5.prototype.CENTER:
-        [x, y, width, height] = [
-          args[0] - args[2] / 2,
-          args[1] - args[3] / 2,
-          args[2],
-          args[3],
-        ];
-        break;
-    }
-
-    this.components.push(
-      Hitbox.transformPolygon({
-        type: "poly",
-        ps: [
-          createVector(x, y),
-          createVector(x + width, y),
-          createVector(x + width, y + height),
-          createVector(x, y + height),
-        ],
-      })
-    );
-
-    return this;
-  }
-
-  triangle(x1, y1, x2, y2, x3, y3) {
-    this.doDraw(() => triangle(x1, y1, x2, y2, x3, y3));
-
-    this.components.push(
-      Hitbox.transformPolygon({
-        type: "poly",
-        ps: [createVector(x1, y1), createVector(x2, y2), createVector(x3, y3)],
-      })
-    );
-
-    return this;
-  }
-
-  square(x, y, s) {
-    return this.rect(x, y, s, s);
-  }
-
-  quad(x1, y1, x2, y2, x3, y3, x4, y4) {
-    this.doDraw(() => quad(x1, y1, x2, y2, x3, y3, x4, y4));
-
-    this.components.push(
-      Hitbox.transformPolygon({
-        type: "poly",
-        ps: [
-          createVector(x1, y1),
-          createVector(x2, y2),
-          createVector(x3, y3),
-          createVector(x4, y4),
-        ],
-      })
-    );
-
-    return this;
-  }
-
-  ellipse(...args) {
-    this.doDraw(() => ellipse(...args));
-
-    // Support for no-height syntax
-    if (args.length == 3) {
-      args.push(args[2]);
-    }
-
-    let x, y, width, height;
-    switch (window._renderer._ellipseMode) {
-      case p5.prototype.CORNER:
-        [x, y, width, height] = [
-          args[0] + args[2] / 2,
-          args[1] + args[3] / 2,
-          args[2],
-          args[3],
-        ];
-        break;
-      case p5.prototype.CORNERS:
-        [x, y, width, height] = [
-          (args[0] + args[2]) / 2,
-          (args[1] + args[3]) / 2,
-          Math.abs(args[2] - args[0]),
-          Math.abs(args[3] - args[1]),
-        ];
-        break;
-      case p5.prototype.RADIUS:
-        [x, y, width, height] = [args[0], args[1], args[2] * 2, args[3] * 2];
-        break;
-      case p5.prototype.CENTER:
-        [x, y, width, height] = args.slice(0, 4);
-        break;
-    }
-
-    // Get conjugate diameters by transforming the original vertices of the ellipse
-    this.components.push(
-      Hitbox.makeEllipse(
-        Hitbox.transformPoint(createVector(x, y)),
-        Hitbox.transformPoint(createVector(x + width / 2, y)),
-        Hitbox.transformPoint(createVector(x, y + height / 2))
-      )
-    );
-
-    return this;
-  }
-
-  circle(x, y, d) {
-    return this.ellipse(x, y, d, d);
-  }
-
-  // Private helpers
-  // ===============
-
-  registerCollisionFn(type1, type2, fn) {
-    this.collisionFnMap[type1 + "," + type2] = fn;
-    if (type1 != type2) {
-      this.collisionFnMap[type2 + "," + type1] = function (a, b) {
-        return fn(b, a);
-      };
+    // Make the lines
+    this.lines = [];
+    for (let i = 0; i < ps.length; i++) {
+      this.lines.push(new HitboxLine(ps[i], ps[(i + 1) % ps.length]));
     }
   }
+}
 
-  // A helper function for handling drawing
-  doDraw(f) {
-    if (this.draw) {
-      push();
-      if (this.draw == "debug") {
-        noStroke();
-        fill(color(255, 0, 0, 100));
-      }
-      f();
-      pop();
-    }
-  }
-
-  static transformPoint(p, mat = null) {
-    let scaleFactor = 1;
-    if (mat == null) {
-      mat = drawingContext.getTransform();
-      scaleFactor = pixelDensity();
-    }
-
-    let pt = mat.transformPoint(new DOMPoint(p.x, p.y));
-    return createVector(pt.x / scaleFactor, pt.y / scaleFactor);
-  }
-
-  static transformLine(line, mat = null) {
-    return Hitbox.makeLine(
-      Hitbox.transformPoint(line.p1, mat),
-      Hitbox.transformPoint(line.p2, mat)
-    );
-  }
-
-  static transformPolygon(poly, mat = null) {
-    return {
-      type: "poly",
-      ps: poly.ps.map((p) => Hitbox.transformPoint(p, mat)),
-    };
-  }
-
-  static transformEllipse(ellipse, mat = null) {
-    return Hitbox.makeEllipse(
-      Hitbox.transformPoint(ellipse.center, mat),
-      Hitbox.transformPoint(ellipse.dia1, mat),
-      Hitbox.transformPoint(ellipse.dia2, mat)
-    );
-  }
-
-  static makeLine(p1, p2) {
-    return {
-      type: "line",
-      p1: p1,
-      p2: p2,
-      v: p5.Vector.sub(p2, p1).normalize(),
-      t: p2.dist(p1),
-    };
-  }
-
-  // Makes an ellipse from two conjugate diameters, defined by a center and two points on the ellipse
+class HitboxEllipse {
+  // The ellipse is defined by two conjugate diameters.
+  // This is because conjugate diameters are resilient to translation, rotation, shearing, and the like.
+  // We specify the cojugate diameters by giving one endpoint of each, as well as the center of the ellipse.
   // This math is from wikipedia: https://en.wikipedia.org/wiki/Ellipse#General_ellipse_2
-  static makeEllipse(center, dia1, dia2) {
+  constructor(center, dia1, dia2, includeFill) {
+    this.type = "Ellipse";
+
+    this.center = center;
+    this.dia1 = dia1;
+    this.dia2 = dia2;
+
+    this.includeFill = includeFill;
+    this.representativePoint = center;
+
     let vf1 = p5.Vector.sub(dia1, center);
     let vf2 = p5.Vector.sub(dia2, center);
 
-    // Get the t of the first vertex
+    // Get the t of the first conjugate diameter
     let denom = 2 * vf1.dot(vf2);
     let t0;
     if (denom != 0) {
@@ -324,55 +104,852 @@ class Hitbox {
     );
 
     // Calculate semiaxes using vertices
-    let a = center.dist(v1);
-    let b = center.dist(v2);
+    this.a = center.dist(v1);
+    this.b = center.dist(v2);
 
     // Make sure a is the major and b is the minor
-    if (b > a) {
-      [a, b] = [b, a];
+    if (this.b > this.a) {
+      [this.a, this.b] = [this.b, this.a];
       [v1, v2] = [v2, v1];
     }
 
     // Calculate angle of rotation
-    let angle = Math.atan2(v1.y - center.y, v1.x - center.x);
+    this.angle = Math.atan2(v1.y - center.y, v1.x - center.x);
 
     // Calculate foci using semiaxes
-    let c = Math.sqrt(a ** 2 - b ** 2);
+    let c = Math.sqrt(this.a ** 2 - this.b ** 2);
     // Thankfully fromAngle is unaffected by angleMode
-    let f1 = p5.Vector.add(center, p5.Vector.fromAngle(angle, c));
-    let f2 = p5.Vector.sub(center, p5.Vector.fromAngle(angle, c));
+    this.f1 = p5.Vector.add(center, p5.Vector.fromAngle(this.angle, c));
+    this.f2 = p5.Vector.sub(center, p5.Vector.fromAngle(this.angle, c));
 
-    return {
-      type: "ellipse",
-      center: center,
-      dia1: dia1,
-      dia2: dia2,
-      a: a,
-      b: b,
-      f1: f1,
-      f2: f2,
-      r: a * 2,
-      angle: angle,
+    // r is the sum of distances between any point on the ellipse and the two foci
+    // It's also just the major axis length
+    this.r = this.a * 2;
+  }
+}
+
+class HitboxArc {
+  // The arc is defined by an ellipse and two endpoints on it.
+  // This is because points are resilient to translation, rotation, shearing, and the like (unlike angles).
+  constructor(ellipse, startV, stopV, mode) {
+    this.type = "Arc";
+
+    this.ellipse = ellipse;
+    this.startV = startV;
+    this.stopV = stopV;
+    this.mode = mode;
+
+    this.includeFill = ellipse.includeFill;
+    this.representativePoint = startV;
+
+    this.start = Math.atan2(
+      startV.y - ellipse.center.y,
+      startV.x - ellipse.center.x
+    );
+    this.stop = Math.atan2(
+      stopV.y - ellipse.center.y,
+      stopV.x - ellipse.center.x
+    );
+
+    // Deal with the non-curved edges of the arc, based on the arc mode
+    this.lines = [];
+    if (mode == p5.prototype.PIE || (this.includeFill && mode == null)) {
+      this.lines.push(new HitboxLine(this.ellipse.center, this.startV));
+      this.lines.push(new HitboxLine(this.ellipse.center, this.stopV));
+    } else if (
+      mode == p5.prototype.CHORD ||
+      (this.includeFill && mode == p5.prototype.OPEN)
+    ) {
+      this.lines.push(new HitboxLine(this.startV, this.stopV));
+    }
+  }
+}
+
+// static makeLine() {
+
+//     if (!this.includeStroke || !makeStrokePolygon) {
+//       return l;
+//     } else {
+//       let perpV = createVector(l.v.y, -l.v.x) // perpendicular vector to line
+//         .normalize()
+//         .mult(drawingContext.lineWidth / 2);
+
+//       return {
+//         type: "poly",
+//         ps: [
+//           p5.Vector.add(l.p1, perpV),
+//           p5.Vector.sub(l.p1, perpV),
+//           p5.Vector.sub(l.p2, perpV),
+//           p5.Vector.add(l.p2, perpV),
+//         ],
+//       };
+//     }
+//   }
+
+// Constants
+DRAW_ON = "draw_on";
+DRAW_OFF = "draw_off";
+DRAW_DEBUG = "draw_debug";
+FILL_ON = "fill_on";
+FILL_OFF = "fill_off";
+RESPECT_STROKE_WEIGHT = "respect_stroke_weight";
+IGNORE_STROKE_WEIGHT = "ignore_stroke_weight";
+
+class Hitbox {
+  constructor(...args) {
+    // Default values
+    this.drawMode = DRAW_ON;
+    this.fillMode = FILL_ON;
+    this.strokeWeightMode = IGNORE_STROKE_WEIGHT;
+
+    // Update values if any given
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+    this.drawMode = drawMode;
+    this.fillMode = fillMode;
+    this.strokeWeightMode = strokeWeightMode;
+
+    if (args.length > 0) {
+      throw "Illegal arguments passed to Hitbox constructor";
+    }
+
+    this.components = [];
+
+    this.collisionFnMap = {
+      coordInsidePoly: Hitbox.coordInsidePoly,
+      coordInsideEllipse: Hitbox.coordInsideEllipse,
+      coordInsideArc: Hitbox.coordInsideArc,
+      collideCoordCoord: Hitbox.collideCoordCoord,
+      collideCoordLine: Hitbox.collideCoordLine,
+      collideCoordPoly: Hitbox.collideCoordPoly,
+      collideCoordEllipse: Hitbox.collideCoordEllipse,
+      collideCoordArc: Hitbox.collideCoordArc,
+      collideLineLine: Hitbox.collideLineLine,
+      collideLinePoly: Hitbox.collideLinePoly,
+      collideLineEllipse: Hitbox.collideLineEllipse,
+      collidePolyPoly: Hitbox.collidePolyPoly,
+      collidePolyEllipse: Hitbox.collidePolyEllipse,
+      collideEllipseEllipse: Hitbox.collideEllipseEllipse,
+      collideEllipseArc: Hitbox.collideEllipseArc,
+      collideArcArc: Hitbox.collideArcArc,
     };
   }
 
-  // Check which side of a line a point is on
-  static sideOfLine(p, line) {
-    return Math.sign(
-      line.v.y * p.x -
-        line.v.x * p.y -
-        (line.v.y * line.p1.x - line.v.x * line.p1.y)
+  // Public functions - collisions & other
+  // =====================================
+
+  collidesWith(other) {
+    for (let A of this.components) {
+      for (let B of other.components) {
+        // First, handle fill: if component A includes its fill, check if component B is entirely within component A (and vice versa) by testing a representative point
+        if (
+          A.includeFill &&
+          this.collisionFnMap["coordInside" + A.type](
+            new HitboxCoord(B.representativePoint),
+            A
+          )
+        ) {
+          // console.log([A, B])
+          return true;
+        }
+        if (
+          B.includeFill &&
+          this.collisionFnMap["coordInside" + B.type](
+            new HitboxCoord(A.representativePoint),
+            B
+          )
+        ) {
+          // console.log([B, A])
+          return true;
+        }
+
+        // Now check the actual collision function, swapping A and B if necessary
+        let key = "collide" + A.type + B.type;
+        if (key in this.collisionFnMap) {
+          if (this.collisionFnMap[key](A, B)) {
+            return true;
+          }
+        } else {
+          key = "collide" + B.type + A.type;
+          if (this.collisionFnMap[key](B, A)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  doesCollidePoint(x, y) {
+    return this.collidesWith({
+      components: [createVector(x, y)],
+    });
+  }
+
+  // Turn drawing on and off.
+  // Valid values:
+  // DRAW_ON - draw as normal (default)
+  // DRAW_OFF - don't draw
+  // DRAW_DEBUG - draw hitboxes as transparent red shapes
+  setDrawMode(drawMode) {
+    if (![DRAW_ON, DRAW_OFF, DRAW_DEBUG].includes(drawMode)) {
+      throw "Invalid draw mode";
+    }
+    this.drawMode = drawMode;
+    return this;
+  }
+
+  // Change whether to use shapes as just their outlines,
+  // or whether to include their inside area as part of the hitbox.
+  // Valid values:
+  // FILL_ON - include (default)
+  // FILL_OFF - don't include
+  setFillMode(fillMode) {
+    if (![FILL_ON, FILL_OFF].includes(fillMode)) {
+      throw "Invalid fill mode";
+    }
+    this.includeStroke = includeStroke;
+    return this;
+  }
+
+  // Change whether to treat the stroke of a shape as a one-pixel boundary,
+  // or whether to take its stroke weight into account (e.g. turn a point into a circle).
+  // Valid values:
+  // IGNORE_STROKE_WEIGHT - treat as one-pixel boundary (default)
+  // RESPECT_STROKE_WEIGHT - take stroke weight into account
+  setStrokeWeightMode(strokeWeightMode) {
+    if (
+      ![RESPECT_STROKE_WEIGHT, IGNORE_STROKE_WEIGHT].includes(strokeWeightMode)
+    ) {
+      throw "Invalid stroke weight mode";
+    }
+    this.strokeWeightMode = strokeWeightMode;
+    return this;
+  }
+
+  // Public functions - p5 shape duplications
+  // ========================================
+
+  point(...args) {
+    let drawMode, strokeWeightMode;
+    ({ args, drawMode, strokeWeightMode } = this.handleModeArgs(args)); // Ignore fillMode
+
+    this._draw(drawMode, () => point(...args));
+
+    let p;
+    if (args.length === 1 && args[0] instanceof p5.Vector) {
+      p = args[0];
+    } else {
+      p = createVector(args[0], args[1]);
+    }
+
+    if (strokeWeightMode == IGNORE_STROKE_WEIGHT) {
+      this.components.push(Hitbox.transform(new HitboxCoord(p)));
+    } else {
+      this.components.push(
+        Hitbox.transform(
+          new HitboxEllipse(
+            p,
+            createVector(p.x + drawingContext.lineWidth / 2, p.y),
+            createVector(p.x, p.y + drawingContext.lineWidth / 2),
+            true
+          )
+        )
+      );
+    }
+
+    return this;
+  }
+
+  line(...args) {
+    let drawMode, strokeWeightMode;
+    ({ args, drawMode, strokeWeightMode } = this.handleModeArgs(args)); // Ignore fillMode
+
+    let [x1, y1, x2, y2] = args;
+
+    this._draw(drawMode, () => line(x1, y1, x2, y2));
+
+    let l = Hitbox.transform(
+      new HitboxLine(createVector(x1, y1), createVector(x2, y2))
     );
+
+    if (strokeWeightMode == IGNORE_STROKE_WEIGHT) {
+      this.components.push(l);
+    } else {
+      let perpV = createVector(l.v.y, -l.v.x) // perpendicular vector to line
+        .normalize()
+        .mult(drawingContext.lineWidth / 2);
+      this.components.push(
+        Hitbox.transform(
+          new HitboxPoly([
+            p5.Vector.add(l.p1, perpV),
+            p5.Vector.sub(l.p1, perpV),
+            p5.Vector.sub(l.p2, perpV),
+            p5.Vector.add(l.p2, perpV),
+          ])
+        )
+      );
+
+      if (includeStrokeCap) {
+        switch (drawingContext.lineCap) {
+          case p5.prototype.ROUND:
+
+          case p5.prototype.SQUARE:
+            // Do nothing
+            break;
+          case p5.prototype.PROJECT:
+            break;
+        }
+      }
+    }
+
+    return this;
+  }
+
+  poly(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    let ps = args[0];
+
+    this._draw(drawMode, () => {
+      beginShape();
+      for (const p of ps) {
+        vertex(p.x, p.y);
+      }
+      endShape(CLOSE);
+    });
+
+    this.components.push(
+      Hitbox.transform(new HitboxPoly(ps, fillMode == FILL_ON))
+    );
+  }
+
+  rect(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    this._draw(drawMode, () => rect(...args));
+
+    let { x, y, w, h } = Hitbox.modeAdjust(
+      args[0],
+      args[1],
+      args[2],
+      args[3],
+      window._renderer._rectMode
+    );
+
+    // p5 allows negative heights/widths
+    w = Math.abs(w);
+    h = Math.abs(h);
+
+    let ps = [
+      createVector(x, y),
+      createVector(x + w, y),
+      createVector(x + w, y + h),
+      createVector(x, y + h),
+    ];
+
+    return this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
+  }
+
+  triangle(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    let [x1, y1, x2, y2, x3, y3] = args;
+
+    this._draw(drawMode, () => triangle(x1, y1, x2, y2, x3, y3));
+
+    let ps = [createVector(x1, y1), createVector(x2, y2), createVector(x3, y3)];
+
+    return this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
+  }
+
+  square(...args) {
+    // Add in the height
+    args.splice(3, 0, args[2]);
+
+    return this.rect(...args);
+  }
+
+  quad(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    let [x1, y1, x2, y2, x3, y3, x4, y4] = args;
+
+    this._draw(drawMode, () => quad(x1, y1, x2, y2, x3, y3, x4, y4));
+
+    let ps = [
+      createVector(x1, y1),
+      createVector(x2, y2),
+      createVector(x3, y3),
+      createVector(x4, y4),
+    ];
+
+    return this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
+  }
+
+  ellipse(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    this._draw(drawMode, () => ellipse(...args));
+
+    // Support for no-height syntax
+    if (args.length == 3) {
+      args.push(args[2]);
+    }
+
+    let { x, y, w, h } = Hitbox.modeAdjust(
+      args[0],
+      args[1],
+      args[2],
+      args[3],
+      window._renderer._ellipseMode
+    );
+
+    // we want things in CENTER mode, not CORNER
+    x += w / 2;
+    y += h / 2;
+
+    // Handle stroke
+    // Technically the resulting shape should be an octic, but p5's renderer just draws an ellipse so whatever
+    if (this.includeStroke) {
+      w += drawingContext.lineWidth;
+      h += drawingContext.lineWidth;
+    }
+
+    // Get conjugate diameters by transforming the original vertices of the ellipse
+    this.components.push(
+      Hitbox.transform(
+        new HitboxEllipse(
+          createVector(x, y),
+          createVector(x + w / 2, y),
+          createVector(x, y + h / 2),
+          fillMode == FILL_ON
+        )
+      )
+    );
+
+    return this;
+  }
+
+  arc(...args) {
+    let drawMode, fillMode, strokeWeightMode;
+    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
+      args
+    ));
+
+    let [x, y, w, h, start, stop] = args.slice(0, 6);
+    let mode = args.length > 6 ? args[6] : null; // If no mode arg, mode is null
+
+    this._draw(drawMode, () => arc(...args));
+
+    // Normalize angles just like p5 does
+    const angles = p5.prototype._normalizeArcAngles(start, stop, w, h, true);
+
+    if (angles.correspondToSamePoint) {
+      // Just use an ellipse hitbox in this case
+      return this.ellipse(x, y, w, h, DRAW_OFF, fillMode, strokeWeightMode);
+    }
+
+    ({ x, y, w, h } = Hitbox.modeAdjust(
+      x,
+      y,
+      w,
+      h,
+      window._renderer._ellipseMode
+    ));
+
+    // we want things in CENTER mode, not CORNER
+    x += w / 2;
+    y += h / 2;
+
+    // Handle stroke
+    // Technically the resulting shape should be an octic, but p5's renderer just draws an ellipse so whatever
+    if (strokeWeightMode == RESPECT_STROKE_WEIGHT) {
+      w += drawingContext.lineWidth;
+      h += drawingContext.lineWidth;
+    }
+
+    // Get conjugate diameters by transforming the original vertices of the ellipse
+    this.components.push(
+      Hitbox.transform(
+        new HitboxArc(
+          new HitboxEllipse(
+            createVector(x, y),
+            createVector(x + w / 2, y),
+            createVector(x, y + h / 2),
+            fillMode == FILL_ON
+          ),
+          createVector(
+            x + (w / 2) * cos(angles.start),
+            y + (h / 2) * sin(angles.start)
+          ),
+          createVector(
+            x + (w / 2) * cos(angles.stop),
+            y + (h / 2) * sin(angles.stop)
+          ),
+          mode
+        )
+      )
+    );
+
+    return this;
+  }
+
+  circle(x, y, d) {
+    return this.ellipse(x, y, d, d);
+  }
+
+  // Private helpers
+  // ===============
+
+  handleModeArgs(args) {
+    let out = {
+      args: [],
+    };
+
+    for (const arg of args) {
+      if ([DRAW_ON, DRAW_OFF, DRAW_DEBUG].includes(arg)) {
+        if ("drawMode" in out) {
+          throw "Can't use more than one draw mode argument";
+        }
+        out.drawMode = arg;
+      } else if ([FILL_ON, FILL_OFF].includes(arg)) {
+        if ("fillMode" in out) {
+          throw "Can't use more than one fill mode argument";
+        }
+        out.fillMode = arg;
+      } else if ([RESPECT_STROKE_WEIGHT, IGNORE_STROKE_WEIGHT].includes(arg)) {
+        if ("strokeWeightMode" in out) {
+          throw "Can't use more than one stroke weight mode argument";
+        }
+        out.strokeWeightMode = arg;
+      } else {
+        out.args.push(arg);
+      }
+    }
+
+    // If no value was given, use current default
+    if (!("drawMode" in out)) {
+      out.drawMode = this.drawMode;
+    }
+    if (!("fillMode" in out)) {
+      out.fillMode = this.fillMode;
+    }
+    if (!("strokeWeightMode" in out)) {
+      out.strokeWeightMode = this.strokeWeightMode;
+    }
+
+    return out;
+  }
+
+  // A helper function for handling drawing
+  _draw(drawMode, f) {
+    switch (drawMode) {
+      case DRAW_ON:
+        f();
+        break;
+      case DRAW_DEBUG:
+        push();
+        fill(color(255, 0, 0, 100));
+        noStroke();
+        f();
+        pop();
+        break;
+      case DRAW_OFF:
+        // Do nothing
+        break;
+    }
+  }
+
+  // Duplicated function from inside p5. Handles rectMode and ellipseMode.
+  // Modified to also handle allowing negative widths and heights.
+  static modeAdjust(a, b, c, d, mode) {
+    let out;
+    if (mode === p5.prototype.CORNER) {
+      out = { x: a, y: b, w: c, h: d };
+    } else if (mode === p5.prototype.CORNERS) {
+      out = { x: a, y: b, w: c - a, h: d - b };
+    } else if (mode === p5.prototype.RADIUS) {
+      out = { x: a - c, y: b - d, w: 2 * c, h: 2 * d };
+    } else if (mode === p5.prototype.CENTER) {
+      out = { x: a - c * 0.5, y: b - d * 0.5, w: c, h: d };
+    } else {
+      throw "Unknown mode";
+    }
+
+    if (out.w < 0) {
+      out.w = Math.abs(out.w);
+      out.x -= out.w;
+    }
+    if (out.h < 0) {
+      out.h = Math.abs(out.h);
+      out.y -= out.h;
+    }
+
+    return out;
+  }
+
+  // Check if angle is an angle between the start and stop angles,
+  // handling periodicity.
+  // All angles must be in radians.
+  static isAngleBetween(angle, start, stop) {
+    // Make sure all angles are in [0, 2π)
+    angle -= TWO_PI * Math.floor(angle / TWO_PI);
+    start -= TWO_PI * Math.floor(start / TWO_PI);
+    stop -= TWO_PI * Math.floor(stop / TWO_PI);
+
+    if (start < stop) {
+      return angle >= start && angle <= stop;
+    } else {
+      return angle >= start || angle <= stop;
+    }
+  }
+
+  // Given a cubic of the form y³ + b*y² + c*y + d = 0,
+  // find one real root. (There is always at least one.)
+  // This follows the formula from https://math.vanderbilt.edu/schectex/courses/cubic/
+  // Used for ellipse-ellipse collisions.
+  static solveCubic(b, c, d) {
+    // We need to do the math in a way that can handle complex numbers.
+    // Even though the coefficients and roots are both real, the process
+    // of solving can involve intermediate steps with complex numbers.
+    // So we use mathjs - this line pulls out relevant functions from it
+    // so we can use shorthand versions of them.
+    let {
+      add,
+      subtract: sub,
+      multiply: mul,
+      divide: div,
+      pow,
+      sqrt,
+      cbrt,
+    } = math;
+
+    // Calculate the real root.
+    // (The other two roots of the cubic might also be real, but we don't care.)
+    let p = add(div(pow(b, 3), -27), mul(b, c, 1 / 6), div(d, -2));
+    let q = sqrt(add(pow(p, 2), pow(sub(div(c, 3), div(pow(b, 2), 9)), 3)));
+    let y_1 = add(cbrt(add(p, q)), cbrt(sub(p, q)), div(b, -3));
+
+    // Make sure the result is returned as a real number instead of a complex
+    // number with a zero imaginary component.
+    if (!math.isNumeric(y_1)) {
+      if (y_1.im != 0) {
+        throw "Something went very wrong finding the real root of a cubic.";
+      }
+      y_1 = y_1.re;
+    }
+
+    return y_1;
+  }
+
+  // Given a quartic of the form z_4*y⁴ + z_3*y³ + z_2*y² + z_1*y + z_0 = 0,
+  // find all of its roots.
+  // This follows the solution from https://mathworld.wolfram.com/QuarticEquation.html - particularly equations 34 and 36-42.
+  // Used for ellipse-ellipse collisions.
+  static solveQuartic(z_4, z_3, z_2, z_1, z_0) {
+    // Normalize coefficients by z_4 to make z_4 = 1
+    let [a_3, a_2, a_1, a_0] = [z_3 / z_4, z_2 / z_4, z_1 / z_4, z_0 / z_4];
+
+    // Get the resolvent cubic's coefficients (equation 34 from Wolfram)
+    // a always equals 1
+    let b = -a_2;
+    let c = a_1 * a_3 - 4 * a_0;
+    let d = 4 * a_2 * a_0 - a_1 ** 2 - a_3 ** 2 * a_0;
+
+    // Find a real root of the cubic
+    let y_1 = Hitbox.solveCubic(b, c, d);
+
+    // Use equations 36-42 from Wolfram to find the four roots
+    let R = sqrt((1 / 4) * a_3 ** 2 - a_2 + y_1);
+    let D, E;
+    if (R != 0) {
+      D = sqrt(
+        (3 / 4) * a_3 ** 2 -
+          R ** 2 -
+          2 * a_2 +
+          (4 * a_3 * a_2 - 8 * a_1 - a_3 ** 3) / (4 * R)
+      );
+      E = sqrt(
+        (3 / 4) * a_3 ** 2 -
+          R ** 2 -
+          2 * a_2 -
+          (4 * a_3 * a_2 - 8 * a_1 - a_3 ** 3) / (4 * R)
+      );
+    } else {
+      D = sqrt((3 / 4) * a_3 ** 2 - 2 * a_2 + 2 * sqrt(y_1 ** 2 - 4 * a_0));
+      E = sqrt((3 / 4) * a_3 ** 2 - 2 * a_2 - 2 * sqrt(y_1 ** 2 - 4 * a_0));
+    }
+
+    let r1 = -a_3 / 4 + R / 2 + D / 2;
+    let r2 = -a_3 / 4 + R / 2 - D / 2;
+    let r3 = -a_3 / 4 - R / 2 + E / 2;
+    let r4 = -a_3 / 4 - R / 2 - E / 2;
+
+    // Only return the real ones - complex ones will turn into NaN
+    return [r1, r2, r3, r4].filter((r) => !Number.isNaN(r));
+  }
+
+  static transform(thing, mat = null) {
+    // Vector
+    if (thing instanceof p5.Vector) {
+      let scaleFactor = 1;
+      if (mat == null) {
+        mat = drawingContext.getTransform();
+        scaleFactor = pixelDensity();
+      }
+
+      let pt = mat.transformPoint(new DOMPoint(thing.x, thing.y));
+      return createVector(pt.x / scaleFactor, pt.y / scaleFactor);
+    }
+
+    // Coord
+    if (thing instanceof HitboxCoord) {
+      return new HitboxCoord(Hitbox.transform(thing.p));
+    }
+
+    // Line
+    if (thing instanceof HitboxLine) {
+      return new HitboxLine(
+        Hitbox.transform(thing.p1, mat),
+        Hitbox.transform(thing.p2, mat)
+      );
+    }
+
+    // Polygon
+    if (thing instanceof HitboxPoly) {
+      return new HitboxPoly(
+        thing.ps.map((p) => Hitbox.transform(p, mat)),
+        thing.includeFill
+      );
+    }
+
+    // Ellipse
+    if (thing instanceof HitboxEllipse) {
+      return new HitboxEllipse(
+        Hitbox.transform(thing.center, mat),
+        Hitbox.transform(thing.dia1, mat),
+        Hitbox.transform(thing.dia2, mat),
+        thing.includeFill
+      );
+    }
+
+    // Arc
+    if (thing instanceof HitboxArc) {
+      return new HitboxArc(
+        Hitbox.transform(thing.ellipse, mat),
+        Hitbox.transform(thing.startV, mat),
+        Hitbox.transform(thing.stopV, mat),
+        thing.mode
+      );
+    }
   }
 
   // Private static collision functions
   // ==================================
 
-  static collideCoordCoord(coord1, coord2) {
-    return (
-      Math.abs(coord1.p.x - coord2.p.x) < EPSILON &&
-      Math.abs(coord1.p.y - coord2.p.y) < EPSILON
+  // Ray casting algorithm - see https://stackoverflow.com/a/218081/2674563
+  static coordInsidePoly(coord, poly) {
+    // Pick an arbitrary point outside the polygon
+    let p = createVector(
+      min(poly.ps.map((p) => p.x)) - 10000,
+      min(poly.ps.map((p) => p.y)) - 10000
     );
+
+    // Draw a line between the point and the target coord
+    let line = new HitboxLine(p, coord.p);
+
+    // Count how many times the line intersects the polygon
+    let intersections = 0;
+    for (let i = 0; i < poly.ps.length; i++) {
+      if (Hitbox.collideLineLine(line, poly.lines[i])) {
+        intersections++;
+      }
+
+      // If we intersect with any vertices, then we double-count, so subtract back
+      // Also need to check sidedness - see https://stackoverflow.com/q/14130742/2674563
+      if (
+        line.sideOf(poly.ps[(i + 1) % poly.ps.length]) !=
+          line.sideOf(poly.ps[(i - 1 + poly.ps.length) % poly.ps.length]) &&
+        Hitbox.collideCoordLine(new HitboxCoord(poly.ps[i]), line)
+      ) {
+        intersections--;
+      }
+    }
+
+    // If the number of intersections is odd, the target coord is inside the polygon
+    return intersections % 2 == 1;
+  }
+
+  static coordInsideEllipse(coord, ellipse) {
+    // Geometric definition of an ellipse:
+    // The set of all points for which the sum of a point's distance from the two foci is equal to some constant
+    return (
+      ellipse.f1.dist(coord.p) + ellipse.f2.dist(coord.p) <= ellipse.r + EPSILON
+    );
+  }
+
+  static coordInsideArc(coord, arc) {
+    // Firstly, the coordinate should definitely be within the entire ellipse
+    if (!Hitbox.coordInsideEllipse(coord, arc.ellipse)) {
+      return false;
+    }
+
+    // The coordinate's angle has to be between the start and stop angles
+    let angle = Math.atan2(
+      coord.p.y - arc.ellipse.center.y,
+      coord.p.x - arc.ellipse.center.x
+    );
+
+    // Handling for chord-style arcs (CHORD or OPEN mode):
+    // We simply check which side of the chord-line the point is on.
+    if (arc.mode == p5.prototype.CHORD || arc.mode == p5.prototype.OPEN) {
+      // Calculate arc length
+      let start = arc.start - TWO_PI * Math.floor(arc.start / TWO_PI);
+      let stop = arc.stop - TWO_PI * Math.floor(arc.stop / TWO_PI);
+      let arcLength = Math.abs(start - stop);
+
+      // If it's a small chord (arc length < PI), the point and ellipse center should be on opposite sides of the chord-line
+      if (arcLength < PI) {
+        return (
+          arc.lines[0].sideOf(coord.p) !=
+          arc.lines[0].sideOf(arc.ellipse.center)
+        );
+      }
+      // If it's a big chord (arc length > PI), the point and ellipse center should be on the same side of the chord-line
+      else if (arcLength > PI) {
+        return (
+          arc.lines[0].sideOf(coord.p) ==
+          arc.lines[0].sideOf(arc.ellipse.center)
+        );
+      }
+      // If it's a perfect half-chord (arc length = PI), it's identical to a non-chord arc, so fall through to the rest of handling
+    }
+
+    // Handling for pie-style arcs (null or PIE mode):
+    // We simply check the angle
+    return Hitbox.isAngleBetween(angle, arc.start, arc.stop);
+  }
+
+  static collideCoordCoord(coord1, coord2) {
+    return coord1.p.dist(coord2.p) < EPSILON;
   }
 
   static collideCoordLine(coord, line) {
@@ -384,51 +961,31 @@ class Hitbox {
   }
 
   static collideCoordPoly(coord, poly) {
-    // Ray casting algorithm - see https://stackoverflow.com/a/218081/2674563
-
-    // Pick an arbitrary point outside the polygon
-    let p = createVector(
-      min(poly.ps.map((p) => p.x)) - 10000,
-      min(poly.ps.map((p) => p.y)) - 10000
-    );
-
-    // Draw a line between the point and the target coord
-    let line = Hitbox.makeLine(p, coord.p);
-
-    // Count how many times the line intersects the polygon
-    let intersections = 0;
-    for (let i = 0; i < poly.ps.length; i++) {
-      if (
-        Hitbox.collideLineLine(
-          line,
-          Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length])
-        )
-      ) {
-        intersections++;
-      }
-
-      // If we intersect with any vertices, then we double-count, so subtract back
-      // Also need to check sidedness - see https://stackoverflow.com/q/14130742/2674563
-      if (
-        Hitbox.sideOfLine(poly.ps[(i + 1) % poly.ps.length], line) !=
-          Hitbox.sideOfLine(
-            poly.ps[(i - 1 + poly.ps.length) % poly.ps.length],
-            line
-          ) &&
-        Hitbox.collideCoordLine({ type: "coord", p: poly.ps[i] }, line)
-      ) {
-        intersections--;
-      }
-    }
-
-    // If the number of intersections is odd, the target coord is inside the polygon
-    return intersections % 2 == 1;
+    return poly.lines.some((l) => Hitbox.collideCoordLine(coord, l));
   }
 
   static collideCoordEllipse(coord, ellipse) {
     // Geometric definition of an ellipse:
     // The set of all points for which the sum of a point's distance from the two foci is equal to some constant
-    return ellipse.f1.dist(coord.p) + ellipse.f2.dist(coord.p) <= ellipse.r;
+    return (
+      Math.abs(
+        ellipse.f1.dist(coord.p) + ellipse.f2.dist(coord.p) - ellipse.r
+      ) <= EPSILON
+    );
+  }
+
+  static collideCoordArc(coord, arc) {
+    // The coordinate's angle has to be between the start and stop angles
+    let angle = Math.atan2(
+      coord.p.y - arc.ellipse.center.y,
+      coord.p.x - arc.ellipse.center.x
+    );
+
+    return (
+      (Hitbox.isAngleBetween(angle, arc.start, arc.stop) &&
+        Hitbox.collideCoordEllipse(coord, arc.ellipse)) ||
+      arc.lines.some((l) => Hitbox.collideCoordLine(coord, l))
+    );
   }
 
   static collideLineLine(line1, line2) {
@@ -437,8 +994,8 @@ class Hitbox {
     if (denom == 0) {
       // Lines are parallel
       return (
-        Hitbox.collideCoordLine({ type: "coord", p: line1.p1 }, line2) ||
-        Hitbox.collideCoordLine({ type: "coord", p: line1.p2 }, line2)
+        Hitbox.collideCoordLine(new HitboxCoord(line1.p1), line2) ||
+        Hitbox.collideCoordLine(new HitboxCoord(line1.p2), line2)
       );
     }
 
@@ -446,23 +1003,25 @@ class Hitbox {
       (line2.v.x * (line1.p1.y - line2.p1.y) +
         line2.v.y * (line2.p1.x - line1.p1.x)) /
       denom;
-    let intersection = p5.Vector.add(line1.p1, p5.Vector.mult(line1.v, t1));
+    let intersection = new HitboxCoord(
+      p5.Vector.add(line1.p1, p5.Vector.mult(line1.v, t1))
+    );
 
     return (
-      Hitbox.collideCoordLine({ type: "coord", p: intersection }, line1) &&
-      Hitbox.collideCoordLine({ type: "coord", p: intersection }, line2)
+      Hitbox.collideCoordLine(intersection, line1) &&
+      Hitbox.collideCoordLine(intersection, line2)
     );
   }
 
   static collideLinePoly(line, poly) {
     return (
-      Hitbox.collideCoordPoly({ type: "coord", p: line.p1 }, poly) ||
-      Hitbox.collideCoordPoly({ type: "coord", p: line.p2 }, poly) ||
+      Hitbox.collideCoordPoly(new HitboxCoord(line.p1), poly) ||
+      Hitbox.collideCoordPoly(new HitboxCoord(line.p2), poly) ||
       [...Array(poly.ps.length).keys()].reduce(
         (l, i) =>
           l ||
           Hitbox.collideLineLine(
-            Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]),
+            new HitboxLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]),
             line
           )
       )
@@ -474,7 +1033,7 @@ class Hitbox {
     let mat = new DOMMatrix()
       .rotate((180 / PI) * -ellipse.angle)
       .translate(-ellipse.center.x, -ellipse.center.y);
-    let tline = Hitbox.transformLine(line, mat);
+    let tline = Hitbox.transform(line, mat);
 
     // Calculate discriminant to see if the line intersects the ellipse
     // (Math is from sagemath, gotten by plugging x = x0 + vx * t and y = y0 + vy * t into x^2 / a^2 + y^2 / b^2 = 1 and expanding into a quadratic of t)
@@ -528,19 +1087,19 @@ class Hitbox {
     // If the line doesn't intersect the ellipse, then we just check its endpoints - it could still be entirely within the ellipse
     // Technically this could equivalently be && instead of || but no reason not to play it safe
     return (
-      Hitbox.collideCoordEllipse({ type: "coords", p: line.p1 }, ellipse) ||
-      Hitbox.collideCoordEllipse({ type: "coords", p: line.p2 }, ellipse)
+      Hitbox.collideCoordEllipse(new HitboxCoord(line.p1), ellipse) ||
+      Hitbox.collideCoordEllipse(new HitboxCoord(line.p2), ellipse)
     );
   }
 
   static collidePolyPoly(poly1, poly2) {
     for (let i = 0; i < poly1.ps.length; i++) {
-      let line1 = Hitbox.makeLine(
+      let line1 = new HitboxLine(
         poly1.ps[i],
         poly1.ps[(i + 1) % poly1.ps.length]
       );
       for (let j = 0; j < poly2.ps.length; j++) {
-        let line2 = Hitbox.makeLine(
+        let line2 = new HitboxLine(
           poly2.ps[j],
           poly2.ps[(j + 1) % poly2.ps.length]
         );
@@ -553,18 +1112,18 @@ class Hitbox {
     return (
       [...Array(poly1.ps.length).keys()].reduce(
         (l, i) =>
-          l || Hitbox.collideCoordPoly({ type: "coord", p: poly1.ps[i] }, poly2)
+          l || Hitbox.collideCoordPoly(new HitboxCoord(poly1.ps[i]), poly2)
       ) ||
       [...Array(poly2.ps.length).keys()].reduce(
         (l, i) =>
-          l || Hitbox.collideCoordPoly({ type: "coord", p: poly2.ps[i] }, poly1)
+          l || Hitbox.collideCoordPoly(new HitboxCoord(poly2.ps[i]), poly1)
       )
     );
   }
 
   static collidePolyEllipse(poly, ellipse) {
     for (let i = 0; i < poly.ps.length; i++) {
-      let line = Hitbox.makeLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]);
+      let line = new HitboxLine(poly.ps[i], poly.ps[(i + 1) % poly.ps.length]);
 
       if (Hitbox.collideLineEllipse(line, ellipse)) {
         return true;
@@ -574,199 +1133,180 @@ class Hitbox {
     return (
       [...Array(poly.ps.length).keys()].reduce(
         (l, i) =>
-          l ||
-          Hitbox.collideCoordEllipse({ type: "coord", p: poly.ps[i] }, ellipse)
-      ) || Hitbox.collideCoordPoly({ type: "coord", p: ellipse.center }, poly)
+          l || Hitbox.collideCoordEllipse(new HitboxCoord(poly.ps[i]), ellipse)
+      ) || Hitbox.collideCoordPoly(new HitboxCoord(ellipse.center), poly)
     );
   }
 
-  // This code is adapted from https://www.khanacademy.org/computer-programming/c/5567955982876672
-  static collideEllipseEllipse(ellipse1, ellipse2) {
+  // If all you care about is whether an intersection exists,
+  // set transformBack to false to save the computation time
+  static getEllipseEllipseIntersection(
+    ellipse1,
+    ellipse2,
+    transformBack = true
+  ) {
     /*
-     * Does the quartic function described by
-     * y = z4*x⁴ + z3*x³ + z2*x² + z1*x + z0 have *any*
-     * real solutions? See
-     * http://en.wikipedia.org/wiki/Quartic_function
-     * Thanks to Dr. David Goldberg for the conversion to
-     * a depressed quartic!
-     */
-    let realRoot = function (z4, z3, z2, z1, z0) {
-      /* First trivial checks for z0 or z4 being zero */
-      if (Math.abs(z0) < EPSILON) {
-        return true; /* zero is a root! */
-      }
-      if (Math.abs(z4) < EPSILON) {
-        if (Math.abs(z3) >= EPSILON) {
-          return true; /* cubics always have roots */
+    1. Move plane so ellipse1 is centered at the origin
+    2. Rotate plane so ellipse1 is flat (major axis parallel to x axis)
+    3. Transform plane so ellipse1 is a unit circle
+    (order of operations is reversed due to how matrix math works)
+    */
+    let mat1 = new DOMMatrix()
+      .scale(1 / ellipse1.a, 1 / ellipse1.b)
+      .rotate((180 / PI) * -ellipse1.angle)
+      .translate(-ellipse1.center.x, -ellipse1.center.y);
+    ellipse1 = Hitbox.transform(ellipse1, mat1);
+    ellipse2 = Hitbox.transform(ellipse2, mat1);
+
+    /*
+    4. Move plane so ellipse2 is centered at the origin
+    5. Rotate plane so ellipse2 is flat (major axis parallel to x axis)
+    */
+    let mat2 = new DOMMatrix()
+      .rotate((180 / PI) * -ellipse2.angle)
+      .translate(-ellipse2.center.x, -ellipse2.center.y);
+    ellipse1 = Hitbox.transform(ellipse1, mat2);
+    ellipse2 = Hitbox.transform(ellipse2, mat2);
+
+    // Rename important variables for easier use
+    let m = ellipse1.center.x;
+    let n = ellipse1.center.y;
+    let w = ellipse2.a;
+    let z = ellipse2.b;
+
+    // Calculate coefficients of intersection quartic
+    let z_0 = (1 - m ** 2 - n ** 2 - w ** 2) ** 2 - 4 * m ** 2 * w ** 2;
+    let z_1 = 4 * n * (1 - m ** 2 - n ** 2 - w ** 2);
+    let z_2 =
+      2 * (m ** 2 + 3 * n ** 2 - 1) +
+      ((2 * w ** 2) / z ** 2) * (m ** 2 - n ** 2 + z ** 2 - w ** 2 + 1);
+    let z_3 = 4 * n * (w ** 2 / z ** 2 - 1);
+    let z_4 = (w ** 2 / z ** 2 - 1) ** 2;
+
+    // Solve the quartic for the y values of all intersections
+    let ys = Hitbox.solveQuartic(z_4, z_3, z_2, z_1, z_0);
+
+    // Filter identical solutions (multiple roots)
+    let temp = [];
+    outerloop: for (const y1 of ys) {
+      for (const y2 of temp) {
+        if (Math.abs(y1 - y2) < EPSILON) {
+          continue outerloop;
         }
-        if (Math.abs(z2) >= EPSILON) {
-          return z1 ** 2 - 4 * z2 * z0 >= 0; /* quadratic, use determinant */
-        }
-        return Math.abs(z1) >= EPSILON; /* sloped lines have one root */
       }
-      let a = z3 / z4,
-        b = z2 / z4,
-        c = z1 / z4,
-        d = z0 / z4;
-      let p = (8 * b - 3 * a ** 2) / 8;
-      let q = (a ** 3 - 4 * a * b + 8 * c) / 8;
-      let r = (-3 * a ** 4 + 256 * d - 64 * c * a + 16 * a ** 2 * b) / 256;
-      /*
-       *   x⁴ +        p*x² + q*x + r
-       * a*x⁴ + b*x³ + c*x² + d*x + e
-       * so a=1  b=0  c=p  d=q  e=r
-       * That is, we have a depessed quartic.
-       */
-      let discrim =
-        256 * r ** 3 -
-        128 * p ** 2 * r ** 2 +
-        144 * p * q ** 2 * r -
-        27 * q ** 4 +
-        16 * p ** 4 * r -
-        4 * p ** 3 * q ** 2;
-      let P = 8 * p;
-      let D = 64 * r - 16 * p ** 2;
+      temp.push(y1);
+    }
+    ys = temp;
 
-      return (
-        discrim < 0 ||
-        (discrim > 0 && P < 0 && D < 0) ||
-        (discrim === 0 && (D !== 0 || P <= 0))
-      );
-    };
+    // Recover the x values associated with each found y value
+    let points = [];
+    for (const y of ys) {
+      // We have two possible options for X
+      let x1 = m + Math.sqrt(1 - (y - n) ** 2);
+      let x2 = m - Math.sqrt(1 - (y - n) ** 2);
+      // The right one squared will be equal to this
+      let xSq = w ** 2 - (w ** 2 / z ** 2) * y ** 2;
 
-    /*
-     * Is the Y coordinate(s) of the intersection of two conic
-     * sections real? They are in their bivariate form,
-     * ax²  + bxy  + cx²  + dx  + ey  + f = 0
-     * For now, a and a1 cannot be zero.
-     * See https://docs.google.com/file/d/0B7wsEy6bpVePSEt2Ql9hY0hFdjA/
-     */
-    let yIntersect = function (a, b, c, d, e, f, a1, b1, c1, d1, e1, f1) {
-      /*
-       * Normalize the conics by their first coefficient, a.
-       * Then get the differnce of the two equations.
-       */
-      let deltaB = (b1 /= a1) - (b /= a),
-        deltaC = (c1 /= a1) - (c /= a),
-        deltaD = (d1 /= a1) - (d /= a),
-        deltaE = (e1 /= a1) - (e /= a),
-        deltaF = (f1 /= a1) - (f /= a);
-
-      /* Special case for b's and d's being equal */
-      if (deltaB === 0 && deltaD === 0) {
-        return realRoot(0, 0, deltaC, deltaE, deltaF);
+      // Pick the correct option for X
+      let x;
+      if (Math.abs(xSq) < EPSILON) {
+        // Special case: an X value very near 0 can mess with the calculation due to impercision. Just set to 0
+        x = 0;
+      } else if (Math.abs(x1 ** 2 - xSq) < EPSILON) {
+        x = x1;
+      } else if (Math.abs(x2 ** 2 - xSq) < EPSILON) {
+        x = x2;
+      } else {
+        // KNOWN ISSUE: for one-point intersections, we sometimes get incorrect solutions for y.
+        // These are filtered here.
+        continue;
       }
 
-      let a3 = b * c1 - b1 * c;
-      let a2 = b * e1 + d * c1 - b1 * e - d1 * c;
-      a1 = b * f1 + d * e1 - b1 * f - d1 * e;
-      let a0 = d * f1 - d1 * f;
-
-      let A = deltaC * deltaC - a3 * deltaB;
-      let B = 2 * deltaC * deltaE - deltaB * a2 - deltaD * a3;
-      let C = deltaE * deltaE + 2 * deltaC * deltaF - deltaB * a1 - deltaD * a2;
-      let D = 2 * deltaE * deltaF - deltaD * a1 - deltaB * a0;
-      let E = deltaF * deltaF - deltaD * a0;
-      return realRoot(A, B, C, D, E);
-    };
-
-    /*
-     * Do two conics sections el and el1 intersect? Each are in
-     * bivariate form, ax²  + bxy  + cx²  + dx  + ey  + f = 0
-     * Solve by constructing a quartic that must have a real
-     * solution if they intersect.  This checks for real Y
-     * intersects, then flips the parameters around to check
-     * for real X intersects.
-     */
-    var conicsIntersect = function (el, el1) {
-      /* check for real y intersects, then real x intersects */
-      return (
-        yIntersect(
-          el.a,
-          el.b,
-          el.c,
-          el.d,
-          el.e,
-          el.f,
-          el1.a,
-          el1.b,
-          el1.c,
-          el1.d,
-          el1.e,
-          el1.f
-        ) &&
-        yIntersect(
-          el.c,
-          el.b,
-          el.a,
-          el.e,
-          el.d,
-          el.f,
-          el1.c,
-          el1.b,
-          el1.a,
-          el1.e,
-          el1.d,
-          el1.f
-        )
-      );
-    };
-
-    /*
-     * Express an ellipse in terms of a "bivariate"
-     * polynomial that sums to zero. See
-     * http://elliotnoma.wordpress.com/2013/04/10/a-closed-form-solution-for-the-intersections-of-two-ellipses
-     */
-    let bivariateForm = function (ellipse) {
-      let A = Math.cos(ellipse.angle);
-      let B = Math.sin(ellipse.angle);
-      /*
-       * Start by rotating the ellipse center by the OPPOSITE
-       * of the desired angle.  That way when the bivariate
-       * computation transforms it back, it WILL be at the
-       * correct (and original) coordinates.
-       */
-      let r = new DOMMatrix()
-        .rotate((180 / PI) * -ellipse.angle)
-        .transformPoint(new DOMPoint(ellipse.center.x, ellipse.center.y));
-      let a = r.x,
-        c = r.y;
-
-      /*
-       * Now let the bivariate computation rotate in the opposite direction.
-       * We only need to flip B to do this, because cos(-theta) = cos(theta)
-       */
-      B = -B;
-      let b = ellipse.a ** 2,
-        d = ellipse.b ** 2;
-      return {
-        a: (A * A) / b + (B * B) / d /* x² coefficient */,
-        b: (-2 * A * B) / b + (2 * A * B) / d /* xy coeff */,
-        c: (B * B) / b + (A * A) / d /* y² coeff */,
-        d: (-2 * a * A) / b - (2 * c * B) / d /* x coeff */,
-        e: (2 * a * B) / b - (2 * c * A) / d /* y coeff */,
-        f: (a * a) / b + (c * c) / d - 1 /* constant */,
-        /* So, ax² + bxy + cy² + dx + ey + f = 0 */
-      };
-    };
-
-    // First check if one ellipse is within the other
-    if (
-      Hitbox.collideCoordEllipse(
-        { type: "coord", p: ellipse1.center },
-        ellipse2
-      ) ||
-      Hitbox.collideCoordEllipse(
-        { type: "coord", p: ellipse2.center },
-        ellipse1
-      )
-    ) {
-      return true;
+      if (!transformBack) {
+        points.push(createVector(x, y));
+      } else {
+        // Transform the solution back into the original coordinate space by undoing the two transforms we did at the start
+        let p = mat2
+          .multiply(mat1)
+          .inverse()
+          .transformPoint(new DOMPoint(x, y));
+        points.push(createVector(p.x, p.y));
+      }
     }
 
-    // Convert both ellipses to bivariate form, then check if they intersect
-    let elps1 = bivariateForm(ellipse1);
-    let elps2 = bivariateForm(ellipse2);
-    return conicsIntersect(elps1, elps2);
+    return points;
+  }
+
+  static collideEllipseEllipse(ellipse1, ellipse2) {
+    // First check whether they're even close to each other - if they were circles, would they intersect?
+    // This is not strictly necessary, but it's very cheap
+    // and saves a lot of time if you have many ellipses flying around
+    if (
+      ellipse1.center.dist(ellipse2.center) - (ellipse1.a + ellipse2.a) >
+      EPSILON
+    ) {
+      return false;
+    }
+
+    // Alright, do the heavy lifting
+    // We can just check if any intersections exist without worrying about where they are
+    return (
+      Hitbox.getEllipseEllipseIntersection(ellipse1, ellipse2, false).length > 0
+    );
+  }
+
+  static collideEllipseArc(ellipse, arc) {
+    // First check whether they're even close to each other - if they were circles, would they intersect?
+    // This is not strictly necessary, but it's very cheap
+    // and saves a lot of time if you have many ellipses flying around
+    if (
+      arc.ellipse.center.dist(ellipse.center) - (arc.ellipse.a + ellipse.a) >
+      EPSILON
+    ) {
+      return false;
+    }
+
+    // Alright, do the heavy lifting
+    let intersections = Hitbox.getEllipseEllipseIntersection(
+      ellipse,
+      arc.ellipse
+    );
+
+    // At least one intersection has to be on the arc
+    return (
+      intersections.some((p) =>
+        Hitbox.collideCoordArc(new HitboxCoord(p), arc)
+      ) || arc.lines.some((l) => Hitbox.collideLineEllipse(l, ellipse))
+    );
+  }
+
+  static collideArcArc(arc1, arc2) {
+    // First check whether they're even close to each other - if they were circles, would they intersect?
+    // This is not strictly necessary, but it's very cheap
+    // and saves a lot of time if you have many ellipses flying around
+    if (
+      arc1.ellipse.center.dist(arc2.ellipse.center) -
+        (arc1.ellipse.a + arc2.ellipse.a) >
+      EPSILON
+    ) {
+      return false;
+    }
+
+    // Alright, do the heavy lifting
+    let intersections = Hitbox.getEllipseEllipseIntersection(
+      arc1.ellipse,
+      arc2.ellipse
+    );
+
+    // At least one intersection has to be on both arcs
+    return (
+      intersections.some(
+        (p) =>
+          Hitbox.collideCoordArc(new HitboxCoord(p), arc1) &&
+          Hitbox.collideCoordArc(new HitboxCoord(p), arc2)
+      ) ||
+      arc1.lines.some((l) => Hitbox.collideLineArc(l, arc2)) ||
+      arc2.lines.some((l) => Hitbox.collideLineArc(l, arc2))
+    );
   }
 }
