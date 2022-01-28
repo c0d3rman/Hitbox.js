@@ -118,6 +118,13 @@ class HitboxCoord {
     // For checking if the we're entirely inside a filled shape
     this.representativePoint = p;
   }
+
+  draw() {
+    push();
+    strokeWeight(5);
+    point(this.p.x, this.p.y);
+    pop();
+  }
 }
 
 class HitboxLine {
@@ -148,6 +155,10 @@ class HitboxLine {
     // We draw a vector between the line's starting point and p, and then cross it with the line's direction vector
     return Math.sign(p5.Vector.sub(this.p1, p).cross(this.v).z);
   }
+
+  draw() {
+    line(this.p1.x, this.p1.y, this.p2.x, this.p2.y);
+  }
 }
 
 class HitboxPoly {
@@ -168,6 +179,14 @@ class HitboxPoly {
     }
 
     this.boundingCircle = HitboxBoundingCircle.fromPoints(ps);
+  }
+
+  draw() {
+    beginShape();
+    for (const p of this.ps) {
+      vertex(p.x, p.y);
+    }
+    endShape(CLOSE);
   }
 }
 
@@ -241,6 +260,14 @@ class HitboxEllipse {
 
     this.boundingCircle = new HitboxBoundingCircle(center, this.a);
   }
+
+  draw() {
+    push();
+    translate(this.center.x, this.center.y);
+    rotate(this.angle);
+    ellipse(0, 0, this.a * 2, this.b * 2);
+    pop();
+  }
 }
 
 class HitboxArc {
@@ -281,6 +308,22 @@ class HitboxArc {
     // Not the optimal bounding circle for small arcs, but who cares
     this.boundingCircle = new HitboxBoundingCircle(ellipse.center, ellipse.a);
   }
+
+  draw() {
+    push();
+    translate(this.ellipse.center.x, this.ellipse.center.y);
+    rotate(this.ellipse.angle);
+    arc(
+      0,
+      0,
+      this.ellipse.a * 2,
+      this.ellipse.b * 2,
+      this.start - this.ellipse.angle,
+      this.stop - this.ellipse.angle,
+      this.mode
+    );
+    pop();
+  }
 }
 
 // static makeLine() {
@@ -307,7 +350,6 @@ class HitboxArc {
 // Constants
 DRAW_ON = "draw_on";
 DRAW_OFF = "draw_off";
-DRAW_DEBUG = "draw_debug";
 FILL_ON = "fill_on";
 FILL_OFF = "fill_off";
 RESPECT_STROKE_WEIGHT = "respect_stroke_weight";
@@ -415,13 +457,30 @@ class Hitbox {
     });
   }
 
+  // Draws the hitbox components as they actually are.
+  // For debugging purposes.
+  drawDebug() {
+    push();
+    resetMatrix();
+    for (const c of this.components) {
+      if (c.includeFill) {
+        fill(color(255, 0, 0, 100));
+        noStroke();
+      } else {
+        noFill();
+        stroke(255, 0, 0);
+      }
+      c.draw();
+    }
+    pop();
+  }
+
   // Turn drawing on and off.
   // Valid values:
   // DRAW_ON - draw as normal (default)
   // DRAW_OFF - don't draw
-  // DRAW_DEBUG - draw hitboxes as transparent red shapes
   setDrawMode(drawMode) {
-    if (![DRAW_ON, DRAW_OFF, DRAW_DEBUG].includes(drawMode)) {
+    if (![DRAW_ON, DRAW_OFF].includes(drawMode)) {
       throw "Invalid draw mode";
     }
     this.drawMode = drawMode;
@@ -463,7 +522,9 @@ class Hitbox {
     let drawMode, strokeWeightMode;
     ({ args, drawMode, strokeWeightMode } = this.handleModeArgs(args)); // Ignore fillMode
 
-    this._draw(drawMode, () => point(...args));
+    if (drawMode == DRAW_ON) {
+      point(...args);
+    }
 
     let p;
     if (args.length === 1 && args[0] instanceof p5.Vector) {
@@ -496,7 +557,9 @@ class Hitbox {
 
     let [x1, y1, x2, y2] = args;
 
-    this._draw(drawMode, () => line(x1, y1, x2, y2));
+    if (drawMode == DRAW_ON) {
+      line(x1, y1, x2, y2);
+    }
 
     let l = Hitbox.transform(
       new HitboxLine(createVector(x1, y1), createVector(x2, y2))
@@ -543,13 +606,13 @@ class Hitbox {
 
     let ps = args[0];
 
-    this._draw(drawMode, () => {
+    if (drawMode == DRAW_ON) {
       beginShape();
       for (const p of ps) {
         vertex(p.x, p.y);
       }
       endShape(CLOSE);
-    });
+    }
 
     this.components.push(
       Hitbox.transform(new HitboxPoly(ps, fillMode == FILL_ON))
@@ -562,7 +625,9 @@ class Hitbox {
       args
     ));
 
-    this._draw(drawMode, () => rect(...args));
+    if (drawMode == DRAW_ON) {
+      rect(...args);
+    }
 
     // Add in the height if none provided
     if (args.length == 3) {
@@ -674,7 +739,9 @@ class Hitbox {
 
     let [x1, y1, x2, y2, x3, y3] = args;
 
-    this._draw(drawMode, () => triangle(x1, y1, x2, y2, x3, y3));
+    if (drawMode == DRAW_ON) {
+      triangle(x1, y1, x2, y2, x3, y3);
+    }
 
     let ps = [createVector(x1, y1), createVector(x2, y2), createVector(x3, y3)];
 
@@ -696,7 +763,9 @@ class Hitbox {
 
     let [x1, y1, x2, y2, x3, y3, x4, y4] = args;
 
-    this._draw(drawMode, () => quad(x1, y1, x2, y2, x3, y3, x4, y4));
+    if (drawMode == DRAW_ON) {
+      quad(x1, y1, x2, y2, x3, y3, x4, y4);
+    }
 
     let ps = [
       createVector(x1, y1),
@@ -714,7 +783,9 @@ class Hitbox {
       args
     ));
 
-    this._draw(drawMode, () => ellipse(...args));
+    if (drawMode == DRAW_ON) {
+      ellipse(...args);
+    }
 
     // Support for no-height syntax
     if (args.length == 3) {
@@ -764,7 +835,9 @@ class Hitbox {
     let [x, y, w, h, start, stop] = args.slice(0, 6);
     let mode = args.length > 6 ? args[6] : null; // If no mode arg, mode is null
 
-    this._draw(drawMode, () => arc(...args));
+    if (drawMode == DRAW_ON) {
+      arc(...args);
+    }
 
     // Normalize angles just like p5 does
     const angles = p5.prototype._normalizeArcAngles(start, stop, w, h, true);
@@ -832,7 +905,7 @@ class Hitbox {
     };
 
     for (const arg of args) {
-      if ([DRAW_ON, DRAW_OFF, DRAW_DEBUG].includes(arg)) {
+      if ([DRAW_ON, DRAW_OFF].includes(arg)) {
         if ("drawMode" in out) {
           throw "Can't use more than one draw mode argument";
         }
@@ -864,25 +937,6 @@ class Hitbox {
     }
 
     return out;
-  }
-
-  // A helper function for handling drawing
-  _draw(drawMode, f) {
-    switch (drawMode) {
-      case DRAW_ON:
-        f();
-        break;
-      case DRAW_DEBUG:
-        push();
-        fill(color(255, 0, 0, 100));
-        noStroke();
-        f();
-        pop();
-        break;
-      case DRAW_OFF:
-        // Do nothing
-        break;
-    }
   }
 
   // Duplicated function from inside p5. Handles rectMode and ellipseMode.
