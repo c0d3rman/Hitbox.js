@@ -564,6 +564,11 @@ class Hitbox {
 
     this._draw(drawMode, () => rect(...args));
 
+    // Add in the height if none provided
+    if (args.length == 3) {
+      args.splice(3, 0, args[2]);
+    }
+
     let { x, y, w, h } = Hitbox.modeAdjust(
       args[0],
       args[1],
@@ -576,13 +581,88 @@ class Hitbox {
     w = Math.abs(w);
     h = Math.abs(h);
 
+    // Rounded corner rect
+    if (args.length > 4) {
+      // Fill all 4 rounded-corner params if some are not provided
+      while (args.length < 8) {
+        args.push(args[args.length - 1]);
+      }
+
+      // Clip the radii to at most half the width or the height
+      let [tl, tr, br, bl] = args
+        .slice(4)
+        .map((r) => Math.min(r, w / 2, h / 2));
+
+      // Draw an octagon for the non-curvy part of the square (chopped-off corners)
+      let ps = [
+        createVector(x, y + tl),
+        createVector(x + tl, y),
+        createVector(x + w - tr, y),
+        createVector(x + w, y + tr),
+        createVector(x + w, y + h - br),
+        createVector(x + w - br, y + h),
+        createVector(x + bl, y + h),
+        createVector(x, y + h - bl),
+      ];
+      this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
+
+      // Draw the four rounded corner arcs
+      this.arc(
+        x + tl,
+        y + tl,
+        tl * 2,
+        tl * 2,
+        PI,
+        PI * (3 / 2),
+        DRAW_OFF,
+        fillMode,
+        strokeWeightMode
+      );
+      this.arc(
+        x + w - tr,
+        y + tr,
+        tr * 2,
+        tr * 2,
+        PI * (3 / 2),
+        0,
+        DRAW_OFF,
+        fillMode,
+        strokeWeightMode
+      );
+      this.arc(
+        x + w - br,
+        y + h - br,
+        br * 2,
+        br * 2,
+        0,
+        PI / 2,
+        DRAW_OFF,
+        fillMode,
+        strokeWeightMode
+      );
+      this.arc(
+        x + bl,
+        y + h - bl,
+        bl * 2,
+        bl * 2,
+        PI / 2,
+        PI,
+        PIE,
+        DRAW_OFF,
+        fillMode,
+        strokeWeightMode
+      );
+
+      return this;
+    }
+
+    // Regular rect
     let ps = [
       createVector(x, y),
       createVector(x + w, y),
       createVector(x + w, y + h),
       createVector(x, y + h),
     ];
-
     return this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
   }
 
@@ -1385,7 +1465,7 @@ class Hitbox {
       arc2.ellipse
     );
 
-    // At least one intersection has to be on both arcs
+    // Either one intersection is on both arcs, a line hits an arc, or a line hits a line
     return (
       intersections.some(
         (p) =>
@@ -1393,7 +1473,10 @@ class Hitbox {
           Hitbox.collideCoordArc(new HitboxCoord(p), arc2)
       ) ||
       arc1.lines.some((l) => Hitbox.collideLineArc(l, arc2)) ||
-      arc2.lines.some((l) => Hitbox.collideLineArc(l, arc2))
+      arc2.lines.some((l) => Hitbox.collideLineArc(l, arc1)) ||
+      arc1.lines.some((l1) =>
+        arc2.lines.some((l2) => Hitbox.collideLineLine(l1, l2))
+      )
     );
   }
 }
