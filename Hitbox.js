@@ -363,10 +363,7 @@ class Hitbox {
     this.strokeWeightMode = IGNORE_STROKE_WEIGHT;
 
     // Update values if any given
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
     this.drawMode = drawMode;
     this.fillMode = fillMode;
     this.strokeWeightMode = strokeWeightMode;
@@ -473,6 +470,7 @@ class Hitbox {
       c.draw();
     }
     pop();
+    return this;
   }
 
   // Turn drawing on and off.
@@ -519,8 +517,7 @@ class Hitbox {
   // ========================================
 
   point(...args) {
-    let drawMode, strokeWeightMode;
-    ({ args, drawMode, strokeWeightMode } = this.handleModeArgs(args)); // Ignore fillMode
+    let { drawMode, strokeWeightMode } = this.handleModeArgs(args); // Ignore fillMode
 
     if (drawMode == DRAW_ON) {
       point(...args);
@@ -552,8 +549,7 @@ class Hitbox {
   }
 
   line(...args) {
-    let drawMode, strokeWeightMode;
-    ({ args, drawMode, strokeWeightMode } = this.handleModeArgs(args)); // Ignore fillMode
+    let { drawMode, strokeWeightMode } = this.handleModeArgs(args); // Ignore fillMode
 
     let [x1, y1, x2, y2] = args;
 
@@ -599,10 +595,7 @@ class Hitbox {
   }
 
   poly(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     let ps = args[0];
 
@@ -620,10 +613,7 @@ class Hitbox {
   }
 
   rect(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     if (drawMode == DRAW_ON) {
       rect(...args);
@@ -732,10 +722,7 @@ class Hitbox {
   }
 
   triangle(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     let [x1, y1, x2, y2, x3, y3] = args;
 
@@ -748,18 +735,8 @@ class Hitbox {
     return this.poly(ps, DRAW_OFF, fillMode, strokeWeightMode);
   }
 
-  square(...args) {
-    // Add in the height
-    args.splice(3, 0, args[2]);
-
-    return this.rect(...args);
-  }
-
   quad(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     let [x1, y1, x2, y2, x3, y3, x4, y4] = args;
 
@@ -778,10 +755,7 @@ class Hitbox {
   }
 
   ellipse(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     if (drawMode == DRAW_ON) {
       ellipse(...args);
@@ -827,10 +801,7 @@ class Hitbox {
   }
 
   arc(...args) {
-    let drawMode, fillMode, strokeWeightMode;
-    ({ args, drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(
-      args
-    ));
+    let { drawMode, fillMode, strokeWeightMode } = this.handleModeArgs(args);
 
     let [x, y, w, h, start, stop] = args.slice(0, 6);
     let mode = args.length > 6 ? args[6] : null; // If no mode arg, mode is null
@@ -892,19 +863,28 @@ class Hitbox {
     return this;
   }
 
-  circle(x, y, d) {
-    return this.ellipse(x, y, d, d);
+  square(...args) {
+    // Add in the height
+    args.splice(3, 0, args[2]);
+
+    return this.rect(...args);
+  }
+
+  circle(...args) {
+    // Add in the height
+    args.splice(3, 0, args[2]);
+
+    return this.ellipse(...args);
   }
 
   // Private helpers
   // ===============
 
   handleModeArgs(args) {
-    let out = {
-      args: [],
-    };
+    let out = {};
 
-    for (const arg of args) {
+    for (let i = args.length - 1; i >= 0; i--) {
+      let arg = args[i];
       if ([DRAW_ON, DRAW_OFF].includes(arg)) {
         if ("drawMode" in out) {
           throw "Can't use more than one draw mode argument";
@@ -921,8 +901,9 @@ class Hitbox {
         }
         out.strokeWeightMode = arg;
       } else {
-        out.args.push(arg);
+        continue;
       }
+      args.splice(i, 1);
     }
 
     // If no value was given, use current default
