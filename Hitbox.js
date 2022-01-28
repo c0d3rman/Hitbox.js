@@ -347,8 +347,10 @@ class Hitbox {
       collideLineLine: Hitbox.collideLineLine,
       collideLinePoly: Hitbox.collideLinePoly,
       collideLineEllipse: Hitbox.collideLineEllipse,
+      collideLineArc: Hitbox.collideLineArc,
       collidePolyPoly: Hitbox.collidePolyPoly,
       collidePolyEllipse: Hitbox.collidePolyEllipse,
+      collidePolyArc: Hitbox.collidePolyArc,
       collideEllipseEllipse: Hitbox.collideEllipseEllipse,
       collideEllipseArc: Hitbox.collideEllipseArc,
       collideArcArc: Hitbox.collideArcArc,
@@ -1150,7 +1152,9 @@ class Hitbox {
     return poly.lines.some((l) => Hitbox.collideLineLine(l, line));
   }
 
-  static collideLineEllipse(line, ellipse) {
+  // If all you care about is whether an intersection exists,
+  // set transformBack to false to save the computation time
+  static getLineEllipseIntersection(line, ellipse, transformBack = true) {
     // Translate and rotate the line so we can put the ellipse flat at the origin, for cleaner math
     let mat = new DOMMatrix()
       .rotate((180 / PI) * -ellipse.angle)
@@ -1201,12 +1205,39 @@ class Hitbox {
             ellipse.b
         ) /
         (ellipse.b ** 2 * tline.v.x ** 2 + ellipse.a ** 2 * tline.v.y ** 2);
-      if ((t1 >= 0 && t1 <= tline.t) || (t2 >= 0 && t2 <= tline.t)) {
-        return true;
+
+      if (!transformBack) {
+        return (t1 >= 0 && t1 <= tline.t) || (t2 >= 0 && t2 <= tline.t);
       }
+
+      let intersections = [];
+      for (const t of [t1, t2]) {
+        if (t >= 0 && t <= tline.t) {
+          intersections.push(
+            Hitbox.transform(
+              p5.Vector.add(tline.p1, p5.Vector.mult(tline.v, t)),
+              mat.inverse()
+            )
+          );
+        }
+      }
+      return intersections;
     }
 
-    return false;
+    return transformBack ? [] : false;
+  }
+
+  static collideLineEllipse(line, ellipse) {
+    return Hitbox.getLineEllipseIntersection(line, ellipse, false);
+  }
+
+  static collideLineArc(line, arc) {
+    let intersections = Hitbox.getLineEllipseIntersection(line, arc.ellipse);
+    return (
+      intersections.some((p) =>
+        Hitbox.collideCoordArc(new HitboxCoord(p), arc)
+      ) || arc.lines.some((l) => Hitbox.collideLineLine(l, line))
+    );
   }
 
   static collidePolyPoly(poly1, poly2) {
@@ -1222,6 +1253,10 @@ class Hitbox {
 
   static collidePolyEllipse(poly, ellipse) {
     return poly.lines.some((l) => Hitbox.collideLineEllipse(l, ellipse));
+  }
+
+  static collidePolyArc(poly, arc) {
+    return poly.lines.some((l) => Hitbox.collideLineArc(l, arc));
   }
 
   // If all you care about is whether an intersection exists,
