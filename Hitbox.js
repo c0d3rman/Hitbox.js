@@ -1241,6 +1241,8 @@ class Hitbox {
       ) {
         // Infinite collisions (unless we're just barely adjacent, but whatever)
         return returnCollisions ? [Infinity] : true;
+      } else {
+        return returnCollisions ? [] : false;
       }
     }
 
