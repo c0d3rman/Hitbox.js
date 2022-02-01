@@ -1,5 +1,8 @@
 let EPSILON = 0.00001;
 
+// Create a canvas element for internal use in detecting collisions
+_hitbox_canvas = document.createElement('canvas');
+
 // For heuristic checking of whether components are close enough to each other to be worth checking for a collision.
 // Saves a lot of time performing expensive ellipse computations.
 class HitboxBoundingCircle {
@@ -177,7 +180,16 @@ class HitboxPoly {
     for (let i = 0; i < ps.length; i++) {
       this.lines.push(new HitboxLine(ps[i], ps[(i + 1) % ps.length]));
     }
+    
+    // Make a canvas path for use in coordInsidePoly
+    this.path = new Path2D();
+    this.path.moveTo(this.ps[0].x, this.ps[0].y)
+    for (let i = 1; i < this.ps.length; i++) {
+      this.path.lineTo(ps[i].x, ps[i].y)
+    }
+    this.path.closePath()
 
+    // Make a bounding circle
     this.boundingCircle = HitboxBoundingCircle.fromPoints(ps);
   }
 
@@ -1109,35 +1121,7 @@ class Hitbox {
 
   // Ray casting algorithm - see https://stackoverflow.com/a/218081/2674563
   static coordInsidePoly(coord, poly) {
-    // Pick an arbitrary point outside the polygon
-    let p = createVector(
-      min(poly.ps.map((p) => p.x)) - 10000,
-      min(poly.ps.map((p) => p.y)) - 10000
-    );
-
-    // Draw a line between the point and the target coord
-    let line = new HitboxLine(p, coord.p);
-
-    // Count how many times the line intersects the polygon
-    let intersections = 0;
-    for (let i = 0; i < poly.ps.length; i++) {
-      if (Hitbox.collideLineLine(line, poly.lines[i])) {
-        intersections++;
-      }
-
-      // If we intersect with any vertices, then we double-count, so subtract back
-      // Also need to check sidedness - see https://stackoverflow.com/q/14130742/2674563
-      if (
-        line.sideOf(poly.ps[(i + 1) % poly.ps.length]) !=
-          line.sideOf(poly.ps[(i - 1 + poly.ps.length) % poly.ps.length]) &&
-        Hitbox.collideCoordLine(new HitboxCoord(poly.ps[i]), line)
-      ) {
-        intersections--;
-      }
-    }
-
-    // If the number of intersections is odd, the target coord is inside the polygon
-    return intersections % 2 == 1;
+    return _hitbox_canvas.getContext('2d').isPointInPath(poly.path, coord.p.x, coord.p.y)
   }
 
   static coordInsideEllipse(coord, ellipse) {
