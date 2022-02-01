@@ -1,7 +1,7 @@
 let EPSILON = 0.00001;
 
 // Create a canvas element for internal use in detecting collisions
-_hitbox_canvas = document.createElement('canvas');
+_hitbox_canvas = document.createElement("canvas");
 
 // Mode constants
 DRAW_ON = "draw_on";
@@ -217,14 +217,14 @@ class HitboxPoly {
     for (let i = 0; i < ps.length; i++) {
       this.lines.push(new HitboxLine(ps[i], ps[(i + 1) % ps.length]));
     }
-    
+
     // Make a canvas path for use in coordInsidePoly
     this.path = new Path2D();
-    this.path.moveTo(this.ps[0].x, this.ps[0].y)
+    this.path.moveTo(this.ps[0].x, this.ps[0].y);
     for (let i = 1; i < this.ps.length; i++) {
-      this.path.lineTo(ps[i].x, ps[i].y)
+      this.path.lineTo(ps[i].x, ps[i].y);
     }
-    this.path.closePath()
+    this.path.closePath();
 
     // Make a bounding circle
     this.boundingCircle = HitboxBoundingCircle.fromPoints(ps);
@@ -1183,7 +1183,9 @@ class Hitbox {
 
   // Ray casting algorithm - see https://stackoverflow.com/a/218081/2674563
   static coordInsidePoly(coord, poly) {
-    return _hitbox_canvas.getContext('2d').isPointInPath(poly.path, coord.p.x, coord.p.y)
+    return _hitbox_canvas
+      .getContext("2d")
+      .isPointInPath(poly.path, coord.p.x, coord.p.y);
   }
 
   static coordInsideEllipse(coord, ellipse) {
