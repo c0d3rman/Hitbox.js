@@ -3,6 +3,14 @@ let EPSILON = 0.00001;
 // Create a canvas element for internal use in detecting collisions
 _hitbox_canvas = document.createElement('canvas');
 
+// Mode constants
+DRAW_ON = "draw_on";
+DRAW_OFF = "draw_off";
+FILL_ON = "fill_on";
+FILL_OFF = "fill_off";
+RESPECT_STROKE_WEIGHT = "respect_stroke_weight";
+IGNORE_STROKE_WEIGHT = "ignore_stroke_weight";
+
 // For heuristic checking of whether components are close enough to each other to be worth checking for a collision.
 // Saves a lot of time performing expensive ellipse computations.
 class HitboxBoundingCircle {
@@ -128,6 +136,10 @@ class HitboxCoord {
     point(this.p.x, this.p.y);
     pop();
   }
+
+  smear(v) {
+    return [new HitboxLine(this.p, p5.Vector.add(this.p, v))];
+  }
 }
 
 class HitboxLine {
@@ -161,6 +173,31 @@ class HitboxLine {
 
   draw() {
     line(this.p1.x, this.p1.y, this.p2.x, this.p2.y);
+  }
+
+  smear(v) {
+    let cosAngle = v.dot(this.v) / (v.mag() * this.v.mag());
+    // Parallel case - θ = 0, cos(θ) = 1
+    if (Math.abs(cosAngle) < EPSILON) {
+      return this.p1.smear(v);
+    }
+    // Antiparallel case - θ = π, cos(θ) = -1
+    else if (Math.abs(cosAngle + 1) < EPSILON) {
+      return this.p2.smear(v);
+    }
+
+    // Normal case
+    return [
+      new HitboxPoly(
+        [
+          this.p1,
+          this.p2,
+          p5.Vector.add(v, this.p2),
+          p5.Vector.add(v, this.p1),
+        ],
+        true
+      ),
+    ];
   }
 }
 
@@ -199,6 +236,39 @@ class HitboxPoly {
       vertex(p.x, p.y);
     }
     endShape(CLOSE);
+  }
+
+  smear(v) {
+    // Find the two outermost points perpendicular to the direction of the smear
+    let perpV = createVector(v.y, -v.x).normalize();
+    let projectedYs = this.ps.map((p) => p.dot(perpV));
+    let i_min = this.ps.reduce(
+      (i_prev, _, i) => (projectedYs[i] < projectedYs[i_prev] ? i : i_prev),
+      0
+    );
+    let i_max = this.ps.reduce(
+      (i_prev, _, i) => (projectedYs[i] > projectedYs[i_prev] ? i : i_prev),
+      0
+    );
+
+    // Draw two smear-polygons with the polygon split into two halves using said points
+    let poly = Hitbox.transform(this, new DOMMatrix().translate(v.x, v.y));
+    let ps1 = [];
+    let ps2 = [];
+    for (let i = i_min; i != i_max; i = (i + 1) % this.ps.length) {
+      ps1.push(this.ps[i]);
+      ps2.push(poly.ps[i]);
+    }
+    ps1.push(this.ps[i_max]);
+    ps2.push(poly.ps[i_max]);
+    for (let i = i_max; i != i_min; i = (i + 1) % this.ps.length) {
+      ps1.push(poly.ps[i]);
+      ps2.push(this.ps[i]);
+    }
+    ps1.push(poly.ps[i_min]);
+    ps2.push(this.ps[i_min]);
+
+    return [new HitboxPoly(ps1, true), new HitboxPoly(ps2, true)];
   }
 }
 
@@ -358,14 +428,6 @@ class HitboxArc {
 //       };
 //     }
 //   }
-
-// Constants
-DRAW_ON = "draw_on";
-DRAW_OFF = "draw_off";
-FILL_ON = "fill_on";
-FILL_OFF = "fill_off";
-RESPECT_STROKE_WEIGHT = "respect_stroke_weight";
-IGNORE_STROKE_WEIGHT = "ignore_stroke_weight";
 
 class Hitbox {
   constructor(...args) {
