@@ -432,7 +432,7 @@ class HitboxArc {
 class Hitbox {
   constructor(...args) {
     // Default values
-    this.drawMode = DRAW_ON;
+    this.drawMode = DRAW_OFF;
     this.fillMode = FILL_ON;
     this.strokeWeightMode = IGNORE_STROKE_WEIGHT;
 
@@ -549,8 +549,8 @@ class Hitbox {
 
   // Turn drawing on and off.
   // Valid values:
-  // DRAW_ON - draw as normal (default)
-  // DRAW_OFF - don't draw
+  // DRAW_OFF - don't draw (default)
+  // DRAW_ON - draw like p5 does in addition to creating the hitbox
   setDrawMode(drawMode) {
     if (![DRAW_ON, DRAW_OFF].includes(drawMode)) {
       throw "Invalid draw mode";
@@ -587,8 +587,25 @@ class Hitbox {
     return this;
   }
 
-  // Public functions - p5 shape duplications
-  // ========================================
+  // Public functions - component creation
+  // =====================================
+  
+  startCapture() {
+    if (Hitbox.prototype.currentCapturingHitbox != null) {
+      throw "Can't start capture because there is already a capture in progress"
+    }
+    if (this.drawMode == DRAW_ON) {
+      console.log("Hitbox warning: draw mode will be set to DRAW_OFF during capturing to avoid infinite looping.")
+    }
+    Hitbox.prototype.currentCapturingHitbox = this
+  }
+    
+  stopCapture() {
+    if (Hitbox.prototype.currentCapturingHitbox !== this) {
+      throw "This hitbox is not in the process of a capture"
+    }
+    Hitbox.prototype.currentCapturingHitbox = null
+  }
 
   point(...args) {
     let { drawMode, strokeWeightMode } = this.handleModeArgs(args); // Ignore fillMode
@@ -1564,4 +1581,30 @@ class Hitbox {
       )
     );
   }
+}
+
+// Capture mode overrides
+Hitbox.prototype.currentCapturingHitbox = null;
+let _wrapGraphicsFunctionForCapture = function (fName) {
+  let f_base = p5.prototype[fName];
+  p5.prototype[fName] = function (...args) {
+    let curr = Hitbox.prototype.currentCapturingHitbox;
+    if (curr != null) {
+      curr[fName].apply(curr, [...args, DRAW_OFF]);
+    }
+    return f_base.apply(p5.instance, args);
+  };
+};
+for (const fName of [
+  "point",
+  "line",
+  "rect",
+  "triangle",
+  "quad",
+  "ellipse",
+  "arc",
+  "square",
+  "circle",
+]) {
+  _wrapGraphicsFunctionForCapture(fName);
 }
