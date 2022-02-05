@@ -463,8 +463,12 @@ class Hitbox {
   // =====================================
 
   collidesWith(other) {
-    for (let A of this.components) {
-      for (let B of other.components) {
+    // We use a classic for loop instead of a for-of loop for performance reasons
+    // This usually doesn't matter, but because this loop can easily get run 1,000,000 or more times every frame, it adds up
+    for (let i = 0; i < this.components.length; i++) {
+      const A = this.components[i];
+      for (let j = 0; j < other.components.length; j++) {
+        const B = other.components[j];
         // First, check bounding circles if they exist. If the bounding circles don't touch, no reason to keep going.
         if (
           "boundingCircle" in A &&
