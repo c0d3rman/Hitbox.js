@@ -589,22 +589,24 @@ class Hitbox {
 
   // Public functions - component creation
   // =====================================
-  
+
   startCapture() {
     if (Hitbox.prototype.currentCapturingHitbox != null) {
-      throw "Can't start capture because there is already a capture in progress"
+      throw "Can't start capture because there is already a capture in progress";
     }
     if (this.drawMode == DRAW_ON) {
-      console.log("Hitbox warning: draw mode will be set to DRAW_OFF during capturing to avoid infinite looping.")
+      console.log(
+        "Hitbox warning: draw mode will be set to DRAW_OFF during capturing to avoid infinite looping."
+      );
     }
-    Hitbox.prototype.currentCapturingHitbox = this
+    Hitbox.prototype.currentCapturingHitbox = this;
   }
-    
+
   stopCapture() {
     if (Hitbox.prototype.currentCapturingHitbox !== this) {
-      throw "This hitbox is not in the process of a capture"
+      throw "This hitbox is not in the process of a capture";
     }
-    Hitbox.prototype.currentCapturingHitbox = null
+    Hitbox.prototype.currentCapturingHitbox = null;
   }
 
   point(...args) {
