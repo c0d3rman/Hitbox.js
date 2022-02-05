@@ -1176,7 +1176,11 @@ class Hitbox {
     if (thing instanceof p5.Vector) {
       let scaleFactor = 1;
       if (mat == null) {
-        mat = drawingContext.getTransform();
+        if (drawingContext instanceof WebGLRenderingContext) {
+          mat = new DOMMatrix(_renderer.uMVMatrix.mat4)
+        } else {
+          mat = drawingContext.getTransform();
+        }
         scaleFactor = pixelDensity();
       }
 
