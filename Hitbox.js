@@ -457,27 +457,6 @@ class Hitbox {
     }
 
     this.components = [];
-
-    this.collisionFnMap = {
-      coordInsidePoly: Hitbox.coordInsidePoly,
-      coordInsideEllipse: Hitbox.coordInsideEllipse,
-      coordInsideArc: Hitbox.coordInsideArc,
-      collideCoordCoord: Hitbox.collideCoordCoord,
-      collideCoordLine: Hitbox.collideCoordLine,
-      collideCoordPoly: Hitbox.collideCoordPoly,
-      collideCoordEllipse: Hitbox.collideCoordEllipse,
-      collideCoordArc: Hitbox.collideCoordArc,
-      collideLineLine: Hitbox.collideLineLine,
-      collideLinePoly: Hitbox.collideLinePoly,
-      collideLineEllipse: Hitbox.collideLineEllipse,
-      collideLineArc: Hitbox.collideLineArc,
-      collidePolyPoly: Hitbox.collidePolyPoly,
-      collidePolyEllipse: Hitbox.collidePolyEllipse,
-      collidePolyArc: Hitbox.collidePolyArc,
-      collideEllipseEllipse: Hitbox.collideEllipseEllipse,
-      collideEllipseArc: Hitbox.collideEllipseArc,
-      collideArcArc: Hitbox.collideArcArc,
-    };
   }
 
   // Public functions - collisions & other
@@ -515,17 +494,9 @@ class Hitbox {
           return true;
         }
 
-        // Now check the actual collision function, swapping A and B if necessary
-        let key = "collide" + A.type + B.type;
-        if (key in this.collisionFnMap) {
-          if (this.collisionFnMap[key](A, B)) {
-            return true;
-          }
-        } else {
-          key = "collide" + B.type + A.type;
-          if (this.collisionFnMap[key](B, A)) {
-            return true;
-          }
+        // Now check the actual collision function
+        if (this.collisionFnMap["collide" + A.type + B.type](A, B)) {
+          return true;
         }
       }
     }
@@ -1643,3 +1614,32 @@ for (const fName of [
 ]) {
   _wrapGraphicsFunctionForCapture(fName);
 }
+
+Hitbox.prototype.collisionFnMap = {
+  coordInsidePoly: Hitbox.coordInsidePoly,
+  coordInsideEllipse: Hitbox.coordInsideEllipse,
+  coordInsideArc: Hitbox.coordInsideArc,
+};
+
+let registerCollisionFn = function (t1, t2, fn) {
+  Hitbox.prototype.collisionFnMap["collide" + t1 + t2] = fn;
+  if (t1 != t2) {
+    Hitbox.prototype.collisionFnMap["collide" + t2 + t1] = (A, B) => fn(B, A);
+  }
+};
+
+registerCollisionFn("Coord", "Coord", Hitbox.collideCoordCoord);
+registerCollisionFn("Coord", "Line", Hitbox.collideCoordLine);
+registerCollisionFn("Coord", "Poly", Hitbox.collideCoordPoly);
+registerCollisionFn("Coord", "Ellipse", Hitbox.collideCoordEllipse);
+registerCollisionFn("Coord", "Arc", Hitbox.collideCoordArc);
+registerCollisionFn("Line", "Line", Hitbox.collideLineLine);
+registerCollisionFn("Line", "Poly", Hitbox.collideLinePoly);
+registerCollisionFn("Line", "Ellipse", Hitbox.collideLineEllipse);
+registerCollisionFn("Line", "Arc", Hitbox.collideLineArc);
+registerCollisionFn("Poly", "Poly", Hitbox.collidePolyPoly);
+registerCollisionFn("Poly", "Ellipse", Hitbox.collidePolyEllipse);
+registerCollisionFn("Poly", "Arc", Hitbox.collidePolyArc);
+registerCollisionFn("Ellipse", "Ellipse", Hitbox.collideEllipseEllipse);
+registerCollisionFn("Ellipse", "Arc", Hitbox.collideEllipseArc);
+registerCollisionFn("Arc", "Arc", Hitbox.collideArcArc);
