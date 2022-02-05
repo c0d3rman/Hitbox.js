@@ -5,7 +5,7 @@ A library to provide simple 2D hitbox collision detection in p5.js programs.
 Add to your p5js.org project by adding this line to index.html:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/c0d3rman/p5-libraries@master/Hitbox.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/c0d3rman/Hitbox.js@master/Hitbox.min.js"></script>
 ```
 
 Hitbox.js supports all the 2D primitives from p5.js: points, lines, ellipses, arcs, and polygons of all shapes.
