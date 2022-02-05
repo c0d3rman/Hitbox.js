@@ -1110,6 +1110,25 @@ class Hitbox {
   // This follows the solution from https://mathworld.wolfram.com/QuarticEquation.html - particularly equations 34 and 36-42.
   // Used for ellipse-ellipse collisions.
   static solveQuartic(z_4, z_3, z_2, z_1, z_0) {
+    // Deal with missing terms
+    if (Math.abs(z_4) < EPSILON) {
+      if (Math.abs(z_3) < EPSILON) {
+        if (Math.abs(z_2) < EPSILON) {
+          // Linear case
+          return -z_0 / z_1;
+        }
+
+        // Quadratic case
+        return [
+          (-z_1 + Math.sqrt(z_1 ** 2 + 4 * z_2 * z_0)) / (2 * z_2),
+          (-z_1 + Math.sqrt(z_1 ** 2 - 4 * z_2 * z_0)) / (2 * z_2),
+        ];
+      }
+
+      // Cubic case
+      return solveCubic(z_2 / z_3, z_1 / z_3, z_0 / z_3);
+    }
+
     // Normalize coefficients by z_4 to make z_4 = 1
     let [a_3, a_2, a_1, a_0] = [z_3 / z_4, z_2 / z_4, z_1 / z_4, z_0 / z_4];
 
