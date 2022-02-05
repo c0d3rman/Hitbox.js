@@ -218,6 +218,16 @@ class HitboxPoly {
       this.lines.push(new HitboxLine(ps[i], ps[(i + 1) % ps.length]));
     }
 
+    // Check that the polygon is not self-intersecting
+    // We don't check adjacent lines, since they obviously intersect at their shared vertex
+    for (let i = 0; i < this.lines.length - 1; i++) {
+      for (let j = i + 2; j < this.lines.length - (i ? 0 : 1); j++) {
+        if (Hitbox.collideLineLine(this.lines[i], this.lines[j])) {
+          throw "Hitbox does not support self-intersecting polygons";
+        }
+      }
+    }
+
     // Make a canvas path for use in coordInsidePoly
     this.path = new Path2D();
     this.path.moveTo(this.ps[0].x, this.ps[0].y);
